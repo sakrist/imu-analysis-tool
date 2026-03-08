@@ -146,6 +146,26 @@ button:disabled {
   font-size: 1rem;
 }
 
+.cardTitleRow {
+  display: flex;
+  align-items: center;
+}
+
+.collapseToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0.5rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 1rem;
+}
+
+.collapseToggle:hover {
+  border-color: #d9cdb9;
+}
+
 .legend {
   display: flex;
   gap: 0.6rem;
@@ -219,6 +239,15 @@ button:disabled {
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.motionView:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border: none;
+  border-radius: 0;
+  background: #fffaf1;
 }
 
 .readout {
