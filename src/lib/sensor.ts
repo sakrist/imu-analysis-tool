@@ -148,6 +148,7 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
   const position = new THREE.Vector3(0, 0, 0)
   const velocity = new THREE.Vector3(0, 0, 0)
   const orientation = new THREE.Quaternion()
+  const worldDown = new THREE.Vector3(0, -1, 0)
   const deviceGravity = new THREE.Vector3(
     points[clampedStart].grx,
     points[clampedStart].gry,
@@ -155,24 +156,41 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
   )
 
   if (deviceGravity.lengthSq() > 1e-6) {
-    const worldDown = new THREE.Vector3(0, -1, 0)
     orientation.setFromUnitVectors(deviceGravity.clone().normalize(), worldDown)
   }
 
   const positions: THREE.Vector3[] = []
   const gyro = new THREE.Vector3()
   const axis = new THREE.Vector3()
-  const accel = new THREE.Vector3()
+  const accelRaw = new THREE.Vector3()
+  const accelFiltered = new THREE.Vector3()
   const gravity = new THREE.Vector3()
+  const gravityWorld = new THREE.Vector3()
   const linearWorld = new THREE.Vector3()
   const deltaQ = new THREE.Quaternion()
+  const gravityAlignQ = new THREE.Quaternion()
+  const identityQ = new THREE.Quaternion()
+
+  const gravityMps2 = 9.80665
+  const accelFilterTauSeconds = 0.18
+  const accelDeadbandG = 0.015
+  const baseVelocityDamping = 1.8
+  const restVelocityDamping = 2.8
+  const gravityCorrectionStrength = 0.12
 
   positions.push(position.clone())
 
   for (let i = clampedStart + 1; i <= clampedEnd; i += 1) {
     const prev = points[i - 1]
     const next = points[i]
-    const dt = clamp(next.timestamp - prev.timestamp, 0, 0.1)
+    const dtRaw = next.timestamp - prev.timestamp
+    if (!Number.isFinite(dtRaw)) {
+      positions.push(position.clone())
+      continue
+    }
+
+    // Cap long gaps and avoid near-zero dt from timestamp jitter.
+    const dt = clamp(dtRaw, 1 / 240, 0.1)
     if (dt <= 0) {
       positions.push(position.clone())
       continue
@@ -186,17 +204,34 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
       orientation.multiply(deltaQ).normalize()
     }
 
-    accel.set(next.ax, next.ay, next.az)
     gravity.set(next.grx, next.gry, next.grz)
+    if (gravity.lengthSq() > 1e-6) {
+      // Complementary correction: keep tilt anchored to measured gravity.
+      gravityWorld.copy(gravity).normalize().applyQuaternion(orientation)
+      gravityAlignQ.setFromUnitVectors(gravityWorld, worldDown)
+      const correctionAlpha = clamp((dt / (0.35 + dt)) * gravityCorrectionStrength, 0, 1)
+      deltaQ.copy(identityQ).slerp(gravityAlignQ, correctionAlpha)
+      orientation.premultiply(deltaQ).normalize()
+    }
+
+    // Apple Watch userAcceleration is already gravity-free (in g units).
+    accelRaw.set(next.ax, next.ay, next.az)
+    const accelAlpha = clamp(dt / (accelFilterTauSeconds + dt), 0, 1)
+    accelFiltered.lerp(accelRaw, accelAlpha)
+    if (accelFiltered.lengthSq() < accelDeadbandG * accelDeadbandG) {
+      accelFiltered.set(0, 0, 0)
+    }
+
+    const accelMagnitudeG = accelFiltered.length()
 
     linearWorld
-      .copy(accel)
-      .sub(gravity)
-      .multiplyScalar(9.81)
+      .copy(accelFiltered)
+      .multiplyScalar(gravityMps2)
       .applyQuaternion(orientation)
 
     velocity.addScaledVector(linearWorld, dt)
-    velocity.multiplyScalar(Math.exp(-dt * 1.8))
+    const damping = accelMagnitudeG < 0.02 ? restVelocityDamping : baseVelocityDamping
+    velocity.multiplyScalar(Math.exp(-dt * damping))
     position.addScaledVector(velocity, dt)
     positions.push(position.clone())
   }

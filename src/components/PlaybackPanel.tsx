@@ -11,6 +11,7 @@ type PlaybackWindow = { start: number; end: number } | null
 type PlaybackPanelProps = {
   selection: Selection
   playbackWindow: PlaybackWindow
+  playbackSamples: Sample[]
   playbackSource: 'view' | 'selection'
   setPlaybackSource: (value: 'view' | 'selection') => void
   playbackIndex: number
@@ -22,9 +23,66 @@ type PlaybackPanelProps = {
   trajectory: THREE.Vector3[]
 }
 
+const FOLLOW_OFFSET = new THREE.Vector3(3.2, 2.6, 3.8)
+
+function clearMarkerGroup(group: THREE.Group) {
+  while (group.children.length > 0) {
+    const child = group.children.pop()
+    if (!child) break
+
+    const withGeometry = child as THREE.Object3D & { geometry?: THREE.BufferGeometry }
+    if (withGeometry.geometry) withGeometry.geometry.dispose()
+
+    const withMaterial = child as THREE.Object3D & { material?: THREE.Material | THREE.Material[] }
+    if (withMaterial.material) {
+      if (Array.isArray(withMaterial.material)) {
+        withMaterial.material.forEach((material) => material.dispose())
+      } else {
+        withMaterial.material.dispose()
+      }
+    }
+
+    if (child instanceof THREE.Sprite) {
+      const spriteMaterial = child.material as THREE.SpriteMaterial
+      spriteMaterial.map?.dispose()
+    }
+  }
+}
+
+function createLabelSprite(text: string) {
+  const canvas = document.createElement('canvas')
+  canvas.width = 560
+  canvas.height = 110
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+
+  ctx.fillStyle = 'rgba(255, 250, 241, 0.92)'
+  ctx.fillRect(0, 0, canvas.width, canvas.height)
+  ctx.strokeStyle = 'rgba(109, 102, 93, 0.75)'
+  ctx.lineWidth = 4
+  ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4)
+  ctx.fillStyle = '#161514'
+  ctx.font = 'bold 34px "IBM Plex Sans", sans-serif'
+  ctx.fillText(text, 20, 68)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.needsUpdate = true
+  const material = new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  })
+  const sprite = new THREE.Sprite(material)
+  sprite.scale.set(0.95, 0.18, 1)
+  sprite.renderOrder = 10
+  return sprite
+}
+
 export function PlaybackPanel({
   selection,
   playbackWindow,
+  playbackSamples,
   playbackSource,
   setPlaybackSource,
   playbackIndex,
@@ -38,21 +96,32 @@ export function PlaybackPanel({
   const motionViewRef = useRef<HTMLDivElement | null>(null)
   const orbitControlsRef = useRef<OrbitControls | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
+  const gridRef = useRef<THREE.GridHelper | null>(null)
+  const boxRef = useRef<THREE.LineSegments | null>(null)
+  const markerGroupRef = useRef<THREE.Group | null>(null)
   const sphereRef = useRef<THREE.Mesh | null>(null)
   const trailGeometryRef = useRef<THREE.BufferGeometry | null>(null)
   const ghostTrailGeometryRef = useRef<THREE.BufferGeometry | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [autoFollowEnabled, setAutoFollowEnabled] = useState(true)
+  const followOffsetRef = useRef(FOLLOW_OFFSET.clone())
+  const rotatedTrajectory = useMemo(() => {
+    if (!trajectory.length) return []
+    return trajectory;
+    // const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)
+    // return trajectory.map((point) => point.clone().applyQuaternion(rotation))
+  }, [trajectory])
 
   const trajectoryFlat = useMemo(() => {
-    if (!trajectory.length) return null
-    const flat = new Float32Array(trajectory.length * 3)
-    trajectory.forEach((p, i) => {
+    if (!rotatedTrajectory.length) return null
+    const flat = new Float32Array(rotatedTrajectory.length * 3)
+    rotatedTrajectory.forEach((p, i) => {
       flat[i * 3] = p.x
       flat[i * 3 + 1] = p.y
       flat[i * 3 + 2] = p.z
     })
     return flat
-  }, [trajectory])
+  }, [rotatedTrajectory])
 
   useEffect(() => {
     const container = motionViewRef.current
@@ -76,6 +145,10 @@ export function PlaybackPanel({
     controls.target.set(0, 0, 0)
     controls.update()
     orbitControlsRef.current = controls
+    const onControlsChange = () => {
+      followOffsetRef.current.copy(camera.position).sub(controls.target)
+    }
+    controls.addEventListener('change', onControlsChange)
 
     const ambient = new THREE.AmbientLight(0xffffff, 0.75)
     const directional = new THREE.DirectionalLight(0xffffff, 0.8)
@@ -84,6 +157,7 @@ export function PlaybackPanel({
 
     const grid = new THREE.GridHelper(4, 10, 0xd1c4ae, 0xe6ddcf)
     scene.add(grid)
+    gridRef.current = grid
 
     const edges = new THREE.EdgesGeometry(new THREE.BoxGeometry(2, 2, 2))
     const box = new THREE.LineSegments(
@@ -91,6 +165,11 @@ export function PlaybackPanel({
       new THREE.LineBasicMaterial({ color: 0xbaa98f, transparent: true, opacity: 0.9 }),
     )
     scene.add(box)
+    boxRef.current = box
+
+    const markerGroup = new THREE.Group()
+    scene.add(markerGroup)
+    markerGroupRef.current = markerGroup
 
     const sphere = new THREE.Mesh(
       new THREE.SphereGeometry(0.14, 24, 24),
@@ -140,9 +219,14 @@ export function PlaybackPanel({
       sphereRef.current = null
       orbitControlsRef.current = null
       cameraRef.current = null
+      gridRef.current = null
+      boxRef.current = null
+      markerGroupRef.current = null
       trailGeometryRef.current = null
       ghostTrailGeometryRef.current = null
       scene.remove(sphere, trail, ghostTrail, box, grid, ambient, directional)
+      clearMarkerGroup(markerGroup)
+      scene.remove(markerGroup)
       ;(sphere.geometry as THREE.BufferGeometry).dispose()
       ;(sphere.material as THREE.Material).dispose()
       trailGeometry.dispose()
@@ -150,6 +234,7 @@ export function PlaybackPanel({
       ghostTrailGeometry.dispose()
       ;(ghostTrail.material as THREE.Material).dispose()
       edges.dispose()
+      controls.removeEventListener('change', onControlsChange)
       controls.dispose()
       renderer.dispose()
       if (renderer.domElement.parentElement === container) {
@@ -171,7 +256,7 @@ export function PlaybackPanel({
 
     if (ghostTrailGeometryRef.current) {
       ghostTrailGeometryRef.current.setAttribute('position', new THREE.BufferAttribute(trajectoryFlat, 3))
-      ghostTrailGeometryRef.current.setDrawRange(0, trajectory.length)
+      ghostTrailGeometryRef.current.setDrawRange(0, rotatedTrajectory.length)
       ghostTrailGeometryRef.current.computeBoundingSphere()
     }
 
@@ -180,15 +265,58 @@ export function PlaybackPanel({
       trailGeometryRef.current.setDrawRange(0, 1)
       trailGeometryRef.current.computeBoundingSphere()
     }
-  }, [trajectory.length, trajectoryFlat])
+  }, [rotatedTrajectory.length, trajectoryFlat])
 
   useEffect(() => {
-    if (!trajectory.length || !playbackWindow || !sphereRef.current || !trailGeometryRef.current) return
-    const trailIndex = clamp(playbackIndex - playbackWindow.start, 0, trajectory.length - 1)
-    const head = trajectory[trailIndex]
+    if (!markerGroupRef.current) return
+
+    const markerGroup = markerGroupRef.current
+    clearMarkerGroup(markerGroup)
+
+    if (!rotatedTrajectory.length || !playbackSamples.length) return
+
+    const intervalSeconds = 2
+    const startTime = playbackSamples[0].t
+    let nextMarkTime = startTime + intervalSeconds
+
+    for (let i = 0; i < rotatedTrajectory.length; i += 1) {
+      const isFirst = i === 0
+      const isLast = i === rotatedTrajectory.length - 1
+      const shouldMark = isFirst || isLast || playbackSamples[i].t >= nextMarkTime
+      if (!shouldMark) continue
+
+      const pos = rotatedTrajectory[i]
+      const axes = new THREE.AxesHelper(0.16)
+      axes.position.copy(pos)
+      markerGroup.add(axes)
+
+      const label = createLabelSprite(`x:${pos.x.toFixed(2)} y:${pos.y.toFixed(2)} z:${pos.z.toFixed(2)}`)
+      if (label) {
+        label.position.copy(pos).add(new THREE.Vector3(0.2, 0.2, 0))
+        markerGroup.add(label)
+      }
+
+      while (playbackSamples[i].t >= nextMarkTime) {
+        nextMarkTime += intervalSeconds
+      }
+    }
+  }, [playbackSamples, rotatedTrajectory])
+
+  useEffect(() => {
+    if (!rotatedTrajectory.length || !playbackWindow || !sphereRef.current || !trailGeometryRef.current) return
+    const trailIndex = clamp(playbackIndex - playbackWindow.start, 0, rotatedTrajectory.length - 1)
+    const head = rotatedTrajectory[trailIndex]
     sphereRef.current.position.copy(head)
     trailGeometryRef.current.setDrawRange(0, trailIndex + 1)
-  }, [playbackIndex, playbackWindow, trajectory])
+    if (gridRef.current) gridRef.current.position.copy(head)
+    if (boxRef.current) boxRef.current.position.copy(head)
+
+    if (autoFollowEnabled && orbitControlsRef.current && cameraRef.current) {
+      orbitControlsRef.current.target.copy(head)
+      cameraRef.current.position.copy(head).add(followOffsetRef.current)
+      orbitControlsRef.current.update()
+    }
+  }, [autoFollowEnabled, playbackIndex, playbackWindow, rotatedTrajectory])
 
   return (
     <section className="playbackCard">
@@ -248,8 +376,13 @@ export function PlaybackPanel({
               const camera = cameraRef.current
               const controls = orbitControlsRef.current
               if (!camera || !controls) return
-              camera.position.set(3.2, 2.6, 3.8)
-              controls.target.set(0, 0, 0)
+              const target =
+                playbackWindow && rotatedTrajectory.length
+                  ? rotatedTrajectory[clamp(playbackIndex - playbackWindow.start, 0, rotatedTrajectory.length - 1)]
+                  : new THREE.Vector3(0, 0, 0)
+              controls.target.copy(target)
+              camera.position.copy(target).add(followOffsetRef.current)
+              setAutoFollowEnabled(true)
               controls.update()
             }}
           >
@@ -274,6 +407,9 @@ export function PlaybackPanel({
       <div className="metaRow">
         <span>
           Playback Source: <b>{playbackSource === 'selection' && selection ? 'Selected Range' : 'Visible Range'}</b>
+        </span>
+        <span>
+          Camera: <b>{autoFollowEnabled ? 'Auto Follow' : 'Manual'}</b>
         </span>
       </div>
 

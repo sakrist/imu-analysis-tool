@@ -32,7 +32,7 @@ function App() {
     setChartWidth(Math.max(320, el.clientWidth - 24))
 
     return () => resizeObserver.disconnect()
-  }, [])
+  }, [points.length])
 
   const viewSize = Math.max(1, viewEnd - viewStart)
 
@@ -48,6 +48,10 @@ function App() {
   }, [playbackSource, points.length, selection, viewStart, viewEnd])
 
   const currentPoint = points[clamp(playbackIndex, 0, points.length - 1)]
+  const playbackSamples = useMemo(() => {
+    if (!playbackWindow) return [] as Sample[]
+    return points.slice(playbackWindow.start, playbackWindow.end + 1)
+  }, [playbackWindow, points])
 
   const trajectory = useMemo(() => {
     if (!playbackWindow) return []
@@ -126,7 +130,7 @@ function App() {
   }
 
   return (
-    <div className="app" ref={chartRef}>
+    <div className="app">
       <header className="toolbar">
         <div>
           <h1>Motion CSV Analyzer</h1>
@@ -146,111 +150,116 @@ function App() {
           <code>timestamp,ax,ay,az,gx,gy,gz,grx,gry,grz</code>
         </section>
       ) : (
-        <>
-          <section className="controls">
-            <div className="buttonRow">
-              <button onClick={() => zoom(0.75)}>Zoom In</button>
-              <button onClick={() => zoom(1.35)}>Zoom Out</button>
-              <button
-                onClick={() => {
-                  setViewStart(0)
-                  setViewEnd(points.length - 1)
-                }}
-              >
-                Reset View
-              </button>
-              <button
-                onClick={() => {
-                  if (!selection) return
-                  const start = Math.min(selection.start, selection.end)
-                  const end = Math.max(selection.start, selection.end)
-                  if (end > start) {
-                    setViewStart(start)
-                    setViewEnd(end)
-                  }
-                }}
-                disabled={!selection}
-              >
-                Zoom To Selection
-              </button>
-              <button onClick={() => setSelection(null)} disabled={!selection}>
-                Clear Selection
-              </button>
-            </div>
-
-            <label className="scrollRow">
-              <span>Scroll window</span>
-              <input
-                type="range"
-                min={0}
-                max={Math.max(0, points.length - 1 - viewSize)}
-                value={Math.min(viewStart, Math.max(0, points.length - 1 - viewSize))}
-                onChange={(e) => {
-                  const nextStart = Number(e.target.value)
-                  setViewStart(nextStart)
-                  setViewEnd(nextStart + viewSize)
-                }}
-              />
-            </label>
-
-            <div className="metaRow">
-              <span>
-                Samples: <b>{points.length.toLocaleString()}</b>
-              </span>
-              <span>
-                Visible: <b>{(viewEnd - viewStart + 1).toLocaleString()}</b>
-              </span>
-              <span>
-                Range: <b>{fmt(points[viewStart].t)}s</b> to <b>{fmt(points[viewEnd].t)}s</b>
-              </span>
-              {selection && (
-                <span>
-                  Selected: <b>{(Math.abs(selection.end - selection.start) + 1).toLocaleString()}</b>
-                </span>
-              )}
-            </div>
-          </section>
-
-          {CHART_GROUPS.map((group) => (
-            <SensorChartCard
-              key={group.title}
-              title={group.title}
-              keys={group.keys}
-              points={points}
-              chartWidth={chartWidth}
-              viewStart={viewStart}
-              viewEnd={viewEnd}
-              viewSize={viewSize}
+        <section className="workspaceGrid">
+          <div className="workspaceLeft">
+            <PlaybackPanel
               selection={selection}
-              selectionAnchor={selectionAnchor}
-              isSelecting={isSelecting}
-              isScrubbing={isScrubbing}
+              playbackWindow={playbackWindow}
+              playbackSamples={playbackSamples}
+              playbackSource={playbackSource}
+              setPlaybackSource={setPlaybackSource}
               playbackIndex={playbackIndex}
-              setIsSelecting={setIsSelecting}
-              setSelectionAnchor={setSelectionAnchor}
-              setSelection={setSelection}
-              setIsScrubbing={setIsScrubbing}
-              setPlaying={setPlaying}
               setPlaybackIndex={setPlaybackIndex}
-              zoom={zoom}
-              pan={pan}
+              playing={playing}
+              setPlaying={setPlaying}
+              currentPoint={currentPoint}
+              currentTrajectoryPoint={currentTrajectoryPoint}
+              trajectory={trajectory}
             />
-          ))}
+          </div>
 
-          <PlaybackPanel
-            selection={selection}
-            playbackWindow={playbackWindow}
-            playbackSource={playbackSource}
-            setPlaybackSource={setPlaybackSource}
-            playbackIndex={playbackIndex}
-            setPlaybackIndex={setPlaybackIndex}
-            playing={playing}
-            setPlaying={setPlaying}
-            currentPoint={currentPoint}
-            currentTrajectoryPoint={currentTrajectoryPoint}
-            trajectory={trajectory}
-          />
-        </>
+          <div className="workspaceRight" ref={chartRef}>
+            <section className="controls">
+              <div className="buttonRow">
+                <button onClick={() => zoom(0.75)}>Zoom In</button>
+                <button onClick={() => zoom(1.35)}>Zoom Out</button>
+                <button
+                  onClick={() => {
+                    setViewStart(0)
+                    setViewEnd(points.length - 1)
+                  }}
+                >
+                  Reset View
+                </button>
+                <button
+                  onClick={() => {
+                    if (!selection) return
+                    const start = Math.min(selection.start, selection.end)
+                    const end = Math.max(selection.start, selection.end)
+                    if (end > start) {
+                      setViewStart(start)
+                      setViewEnd(end)
+                    }
+                  }}
+                  disabled={!selection}
+                >
+                  Zoom To Selection
+                </button>
+                <button onClick={() => setSelection(null)} disabled={!selection}>
+                  Clear Selection
+                </button>
+              </div>
+
+              <label className="scrollRow">
+                <span>Scroll window</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(0, points.length - 1 - viewSize)}
+                  value={Math.min(viewStart, Math.max(0, points.length - 1 - viewSize))}
+                  onChange={(e) => {
+                    const nextStart = Number(e.target.value)
+                    setViewStart(nextStart)
+                    setViewEnd(nextStart + viewSize)
+                  }}
+                />
+              </label>
+
+              <div className="metaRow">
+                <span>
+                  Samples: <b>{points.length.toLocaleString()}</b>
+                </span>
+                <span>
+                  Visible: <b>{(viewEnd - viewStart + 1).toLocaleString()}</b>
+                </span>
+                <span>
+                  Range: <b>{fmt(points[viewStart].t)}s</b> to <b>{fmt(points[viewEnd].t)}s</b>
+                </span>
+                {selection && (
+                  <span>
+                    Selected: <b>{(Math.abs(selection.end - selection.start) + 1).toLocaleString()}</b>
+                  </span>
+                )}
+              </div>
+            </section>
+
+            {CHART_GROUPS.map((group) => (
+              <SensorChartCard
+                key={group.title}
+                title={group.title}
+                keys={group.keys}
+                points={points}
+                chartWidth={chartWidth}
+                viewStart={viewStart}
+                viewEnd={viewEnd}
+                viewSize={viewSize}
+                selection={selection}
+                selectionAnchor={selectionAnchor}
+                isSelecting={isSelecting}
+                isScrubbing={isScrubbing}
+                playbackIndex={playbackIndex}
+                setIsSelecting={setIsSelecting}
+                setSelectionAnchor={setSelectionAnchor}
+                setSelection={setSelection}
+                setIsScrubbing={setIsScrubbing}
+                setPlaying={setPlaying}
+                setPlaybackIndex={setPlaybackIndex}
+                zoom={zoom}
+                pan={pan}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   )
