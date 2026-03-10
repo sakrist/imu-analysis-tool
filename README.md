@@ -1,75 +1,140 @@
-# React + TypeScript + Vite
+# Motion CSV Analyzer
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interactive web tool for analyzing Apple Watch motion logs (`acceleration`, `gyro`, `gravity`) and visualizing motion playback in 3D.
 
-Currently, two official plugins are available:
+The app is built with React + TypeScript + Vite and includes:
+- zoomable time-series charts
+- section selection and playback scrubbing
+- Three.js trail playback with coordinate markers
+- side-by-side layout (3D view + graphs)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## What This Project Does
 
-## React Compiler
+- Loads CSV files with motion samples.
+- Plots three grouped charts:
+  - `Acceleration`: `ax, ay, az`
+  - `Gyroscope`: `gx, gy, gz`
+  - `Gravity`: `grx, gry, grz`
+- Lets you pan/zoom charts and select ranges.
+- Replays selected/visible range in 3D using a derived trajectory.
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+## Expected CSV Format
 
-Note: This will impact Vite dev & build performances.
+Header must contain exactly these columns:
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```csv
+timestamp,ax,ay,az,gx,gy,gz,grx,gry,grz
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Example row:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```csv
+1772830585.522370,0.011660,0.046078,-0.010078,-0.049581,-0.115448,-0.073396,-0.049746,-0.063000,-0.996773
 ```
+
+### Units (Apple Watch / Core Motion)
+
+- `ax, ay, az` (`userAcceleration`): in **g**, gravity already removed.
+- `gx, gy, gz` (`rotationRate`): in **rad/s**.
+- `grx, gry, grz` (`gravity`): in **g**.
+
+## Quick Start
+
+### 1) Install
+
+```bash
+npm install
+```
+
+### 2) Run development server
+
+```bash
+npm run dev
+```
+
+### 3) Build production bundle
+
+```bash
+npm run build
+```
+
+### 4) Preview production build
+
+```bash
+npm run preview
+```
+
+### 5) Lint
+
+```bash
+npm run lint
+```
+
+## How to Use
+
+1. Click **Load CSV** and select your file.
+2. Use chart controls:
+   - **Zoom In / Zoom Out / Reset View**
+   - **Zoom To Selection / Clear Selection**
+3. Interact directly on charts:
+   - Wheel pan (or Ctrl/Cmd + wheel to zoom)
+   - Drag to select section
+   - Drag red playhead line to scrub playback frame
+4. Use playback panel:
+   - **Visible Range** or **Selected Range**
+   - **Play / Pause / Rewind**
+   - **Reset 3D View / Fullscreen**
+
+## 3D Playback Notes
+
+- A faint **ghost trajectory** shows full path for current playback window.
+- A red trail shows progressed playback path.
+- Small coordinate labels are placed every few seconds.
+- Camera follows the moving point; manual camera interaction updates follow offset.
+
+## Trajectory Model (Approximate)
+
+Trajectory is estimated from sensor data in `computeTrajectory()`:
+
+- Integrates gyro for orientation.
+- Uses gravity for tilt correction (complementary correction).
+- Uses `userAcceleration` directly (no gravity subtraction).
+- Applies low-pass filtering + deadband on acceleration.
+- Converts g to m/s² with `9.80665`.
+- Integrates velocity and position with damping to reduce drift.
+
+This is dead-reckoning, so long segments can still drift.
+
+## Project Structure
+
+```text
+src/
+  App.tsx                       # Top-level state and layout
+  App.css                       # App styling and responsive layout
+  components/
+    SensorChartCard.tsx         # One collapsible chart card (A/G/Gravity)
+    PlaybackPanel.tsx           # Three.js playback and controls
+  lib/
+    sensor.ts                   # CSV parsing + trajectory/model utilities
+```
+
+## Known Limitations
+
+- Timestamp quality strongly affects integration stability.
+- No magnetometer fusion, so yaw can drift.
+- Dead-reckoning is inherently noisy over longer durations.
+
+## Recommended Data Capture Improvements
+
+On Apple Watch, prefer `motion.timestamp` over wall-clock time for integration stability.
+
+Current logging pattern (for reference):
+
+```swift
+let timestamp = Date().timeIntervalSince1970
+let acceleration = motion.userAcceleration
+let gyro = motion.rotationRate
+let gravity = motion.gravity
+```
+
+Switching to `motion.timestamp` is recommended for best trajectory quality.

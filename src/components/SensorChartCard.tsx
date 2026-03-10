@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { MOTION_BORDERS, MOTION_COLORS } from '../lib/motionProcessing'
 import { COLORS, clamp, sampleVisible, toPath } from '../lib/sensor'
 import type { AxisKey, Sample } from '../lib/sensor'
+import type { MotionRange } from '../lib/motionProcessing'
 
 type Selection = { start: number; end: number } | null
 
@@ -17,6 +19,7 @@ type SensorChartCardProps = {
   isSelecting: boolean
   isScrubbing: boolean
   playbackIndex: number
+  motionRanges: MotionRange[]
   setIsSelecting: (value: boolean) => void
   setSelectionAnchor: (value: number | null) => void
   setSelection: (value: Selection) => void
@@ -40,6 +43,7 @@ export function SensorChartCard({
   isSelecting,
   isScrubbing,
   playbackIndex,
+  motionRanges,
   setIsSelecting,
   setSelectionAnchor,
   setSelection,
@@ -73,6 +77,9 @@ export function SensorChartCard({
   const playheadX = collapsed
     ? 0
     : ((clamp(playbackIndex, viewStart, viewEnd) - viewStart) / Math.max(1, viewEnd - viewStart)) * chartWidth
+  const visibleMotionRanges = collapsed
+    ? []
+    : motionRanges.filter((range) => range.endIndex >= viewStart && range.startIndex <= viewEnd)
 
   return (
     <section className="chartCard">
@@ -153,6 +160,37 @@ export function SensorChartCard({
           {[0.25, 0.5, 0.75].map((v) => (
             <line key={v} x1={0} y1={200 * v} x2={chartWidth} y2={200 * v} className="gridLine" />
           ))}
+
+          {visibleMotionRanges.map((range) => {
+            const start = clamp(range.startIndex, viewStart, viewEnd)
+            const end = clamp(range.endIndex, viewStart, viewEnd)
+            const x =
+              ((Math.min(start, end) - viewStart) / Math.max(1, viewEnd - viewStart)) * chartWidth
+            const width =
+              (Math.max(1, Math.abs(end - start)) / Math.max(1, viewEnd - viewStart)) * chartWidth
+            const mid = x + width / 2
+
+            return (
+              <g key={`${range.label}-${range.startIndex}-${range.endIndex}`} className="motionRangeGroup">
+                <rect
+                  x={x}
+                  y={0}
+                  width={width}
+                  height={200}
+                  style={{
+                    fill: MOTION_COLORS[range.label],
+                    stroke: MOTION_BORDERS[range.label],
+                  }}
+                  className="motionRange"
+                />
+                {width > 64 && (
+                  <text x={mid} y={16} textAnchor="middle" className="motionRangeLabel">
+                    {range.label}
+                  </text>
+                )}
+              </g>
+            )
+          })}
 
           {keys.map((key, idx) => (
             <path

@@ -196,6 +196,8 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
       continue
     }
 
+    // 1) Integrate orientation from gyro (rad/s -> delta quaternion over dt).
+    // This is the fast-changing orientation estimate.
     gyro.set(next.gx, next.gy, next.gz)
     const angularSpeed = gyro.length()
     if (angularSpeed > 1e-6) {
@@ -204,9 +206,11 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
       orientation.multiply(deltaQ).normalize()
     }
 
+    // 2) Correct tilt drift using gravity (complementary correction).
+    // We compare predicted gravity direction (after current orientation)
+    // with worldDown, then apply a small corrective rotation.
     gravity.set(next.grx, next.gry, next.grz)
     if (gravity.lengthSq() > 1e-6) {
-      // Complementary correction: keep tilt anchored to measured gravity.
       gravityWorld.copy(gravity).normalize().applyQuaternion(orientation)
       gravityAlignQ.setFromUnitVectors(gravityWorld, worldDown)
       const correctionAlpha = clamp((dt / (0.35 + dt)) * gravityCorrectionStrength, 0, 1)
@@ -214,24 +218,35 @@ export function computeTrajectory(points: Sample[], start: number, end: number) 
       orientation.premultiply(deltaQ).normalize()
     }
 
-    // Apple Watch userAcceleration is already gravity-free (in g units).
+    // 3) Filter userAcceleration (already gravity-free on Apple Watch).
+    // Low-pass smoothing reduces jitter before double integration.
     accelRaw.set(next.ax, next.ay, next.az)
     const accelAlpha = clamp(dt / (accelFilterTauSeconds + dt), 0, 1)
     accelFiltered.lerp(accelRaw, accelAlpha)
+
+    // 4) Deadband removes tiny residual noise near rest.
     if (accelFiltered.lengthSq() < accelDeadbandG * accelDeadbandG) {
       accelFiltered.set(0, 0, 0)
     }
 
     const accelMagnitudeG = accelFiltered.length()
 
+    // 5) Convert filtered acceleration from g to m/s² and rotate
+    // from device frame into world frame using current orientation.
     linearWorld
       .copy(accelFiltered)
       .multiplyScalar(gravityMps2)
       .applyQuaternion(orientation)
 
+    // 6) Integrate acceleration -> velocity.
     velocity.addScaledVector(linearWorld, dt)
+
+    // 7) Apply velocity damping to limit long-term drift.
+    // When accel is very small, use stronger damping (rest-like behavior).
     const damping = accelMagnitudeG < 0.02 ? restVelocityDamping : baseVelocityDamping
     velocity.multiplyScalar(Math.exp(-dt * damping))
+
+    // 8) Integrate velocity -> position and store trajectory sample.
     position.addScaledVector(velocity, dt)
     positions.push(position.clone())
   }

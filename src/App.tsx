@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PlaybackPanel } from './components/PlaybackPanel'
 import { SensorChartCard } from './components/SensorChartCard'
+import { detectMotionRanges } from './lib/motionProcessing'
 import { CHART_GROUPS, clamp, computeTrajectory, fmt, parseCsv } from './lib/sensor'
 import type { Sample } from './lib/sensor'
 import './App.css'
@@ -57,6 +58,7 @@ function App() {
     if (!playbackWindow) return []
     return computeTrajectory(points, playbackWindow.start, playbackWindow.end)
   }, [playbackWindow, points])
+  const motionRanges = useMemo(() => detectMotionRanges(points), [points])
 
   const currentTrajectoryPoint = useMemo(() => {
     if (!playbackWindow || !trajectory.length) return null
@@ -230,6 +232,9 @@ function App() {
                     Selected: <b>{(Math.abs(selection.end - selection.start) + 1).toLocaleString()}</b>
                   </span>
                 )}
+                <span>
+                  Motions: <b>{motionRanges.length}</b>
+                </span>
               </div>
             </section>
 
@@ -248,6 +253,7 @@ function App() {
                 isSelecting={isSelecting}
                 isScrubbing={isScrubbing}
                 playbackIndex={playbackIndex}
+                motionRanges={motionRanges}
                 setIsSelecting={setIsSelecting}
                 setSelectionAnchor={setSelectionAnchor}
                 setSelection={setSelection}

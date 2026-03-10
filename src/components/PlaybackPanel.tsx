@@ -104,6 +104,7 @@ export function PlaybackPanel({
   const ghostTrailGeometryRef = useRef<THREE.BufferGeometry | null>(null)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [autoFollowEnabled, setAutoFollowEnabled] = useState(true)
+  const [showCoordinateLabels, setShowCoordinateLabels] = useState(true)
   const followOffsetRef = useRef(FOLLOW_OFFSET.clone())
   const rotatedTrajectory = useMemo(() => {
     if (!trajectory.length) return []
@@ -290,17 +291,19 @@ export function PlaybackPanel({
       axes.position.copy(pos)
       markerGroup.add(axes)
 
-      const label = createLabelSprite(`x:${pos.x.toFixed(2)} y:${pos.y.toFixed(2)} z:${pos.z.toFixed(2)}`)
-      if (label) {
-        label.position.copy(pos).add(new THREE.Vector3(0.2, 0.2, 0))
-        markerGroup.add(label)
+      if (showCoordinateLabels) {
+        const label = createLabelSprite(`x:${pos.x.toFixed(2)} y:${pos.y.toFixed(2)} z:${pos.z.toFixed(2)}`)
+        if (label) {
+          label.position.copy(pos).add(new THREE.Vector3(0.2, 0.2, 0))
+          markerGroup.add(label)
+        }
       }
 
       while (playbackSamples[i].t >= nextMarkTime) {
         nextMarkTime += intervalSeconds
       }
     }
-  }, [playbackSamples, rotatedTrajectory])
+  }, [playbackSamples, rotatedTrajectory, showCoordinateLabels])
 
   useEffect(() => {
     if (!rotatedTrajectory.length || !playbackWindow || !sphereRef.current || !trailGeometryRef.current) return
@@ -401,6 +404,13 @@ export function PlaybackPanel({
           >
             {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
           </button>
+          <button
+            onClick={() => {
+              setShowCoordinateLabels((prev) => !prev)
+            }}
+          >
+            {showCoordinateLabels ? 'Hide 3D Labels' : 'Show 3D Labels'}
+          </button>
         </div>
       </div>
 
@@ -410,6 +420,9 @@ export function PlaybackPanel({
         </span>
         <span>
           Camera: <b>{autoFollowEnabled ? 'Auto Follow' : 'Manual'}</b>
+        </span>
+        <span>
+          Labels: <b>{showCoordinateLabels ? 'Visible' : 'Hidden'}</b>
         </span>
       </div>
 
