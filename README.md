@@ -1,26 +1,27 @@
-# Motion CSV Analyzer
+# Hurley Motion CSV Analyzer
 
-Interactive web tool for analyzing Apple Watch motion logs (`acceleration`, `gyro`, `gravity`) and visualizing motion playback in 3D.
+A browser-based tool for inspecting Apple Watch/Core Motion CSV logs, spotting motion segments, and replaying movement in a 3D scene.
 
-The app is built with React + TypeScript + Vite and includes:
-- zoomable time-series charts
-- section selection and playback scrubbing
-- Three.js trail playback with coordinate markers
-- side-by-side layout (3D view + graphs)
+Built with React, TypeScript, Vite, and Three.js.
 
-## What This Project Does
+## What It Does
 
-- Loads CSV files with motion samples.
-- Plots three grouped charts:
-  - `Acceleration`: `ax, ay, az`
-  - `Gyroscope`: `gx, gy, gz`
-  - `Gravity`: `grx, gry, grz`
-- Lets you pan/zoom charts and select ranges.
-- Replays selected/visible range in 3D using a derived trajectory.
+- Loads motion CSV files with acceleration, gyroscope, and gravity channels
+- Renders synchronized time-series charts for:
+  - `Acceleration`: `ax`, `ay`, `az`
+  - `Gyroscope`: `gx`, `gy`, `gz`
+  - `Gravity`: `grx`, `gry`, `grz`
+- Supports chart interaction:
+  - Pan and zoom
+  - Drag-select time ranges
+  - Playhead scrubbing
+- Lets you assign labels to selected ranges manually
+- Exports labeled ranges to CSV for downstream classification workflows
+- Replays selected or visible data in a Three.js 3D trajectory viewer
 
-## Expected CSV Format
+## CSV Requirements
 
-Header must contain exactly these columns:
+Required header fields (order can vary, names must match):
 
 ```csv
 timestamp,ax,ay,az,gx,gy,gz,grx,gry,grz
@@ -32,109 +33,91 @@ Example row:
 1772830585.522370,0.011660,0.046078,-0.010078,-0.049581,-0.115448,-0.073396,-0.049746,-0.063000,-0.996773
 ```
 
-### Units (Apple Watch / Core Motion)
+Units:
 
-- `ax, ay, az` (`userAcceleration`): in **g**, gravity already removed.
-- `gx, gy, gz` (`rotationRate`): in **rad/s**.
-- `grx, gry, grz` (`gravity`): in **g**.
+- `ax`, `ay`, `az` (`userAcceleration`): `g`
+- `gx`, `gy`, `gz` (`rotationRate`): `rad/s`
+- `grx`, `gry`, `grz` (`gravity`): `g`
 
 ## Quick Start
 
-### 1) Install
-
 ```bash
 npm install
-```
-
-### 2) Run development server
-
-```bash
 npm run dev
 ```
 
-### 3) Build production bundle
+Open the local URL from Vite (typically `http://localhost:5173`).
+
+## Scripts
 
 ```bash
-npm run build
+npm run dev      # start dev server
+npm run build    # type-check + production build
+npm run preview  # preview production build
+npm run lint     # run ESLint
 ```
 
-### 4) Preview production build
+## Usage Flow
 
-```bash
-npm run preview
-```
+1. Click **Load CSV** and choose your data file.
+2. Explore charts with mouse wheel (pan) or `Ctrl/Cmd + wheel` (zoom).
+3. Drag in a chart to create a selection.
+4. Choose playback source:
+   - **Visible Range**
+   - **Selected Range**
+5. Use **Play / Pause / Rewind** and drag the red playhead to scrub.
+6. In 3D view, toggle auto-follow, coordinate labels, and fullscreen as needed.
 
-### 5) Lint
+## Labeling Workflow
 
-```bash
-npm run lint
-```
+Range overlays are manual:
 
-## How to Use
+1. Drag in a chart to create a selection.
+2. Enter a label name (or load a previous labels CSV with **Load Labels CSV**).
+3. Click **Add Selected Range**.
+4. Export all labels with **Export Labels CSV**.
 
-1. Click **Load CSV** and select your file.
-2. Use chart controls:
-   - **Zoom In / Zoom Out / Reset View**
-   - **Zoom To Selection / Clear Selection**
-3. Interact directly on charts:
-   - Wheel pan (or Ctrl/Cmd + wheel to zoom)
-   - Drag to select section
-   - Drag red playhead line to scrub playback frame
-4. Use playback panel:
-   - **Visible Range** or **Selected Range**
-   - **Play / Pause / Rewind**
-   - **Reset 3D View / Fullscreen**
+The exported CSV includes:
+- `label`
+- `startIndex`, `endIndex`
+- `startTimeSec`, `endTimeSec`
+- `durationSec`
+- `sampleCount`
 
-## 3D Playback Notes
+Export is sorted by `startTimeSec` so rows are always in timeline order.
+The importer accepts this same CSV schema.
 
-- A faint **ghost trajectory** shows full path for current playback window.
-- A red trail shows progressed playback path.
-- Small coordinate labels are placed every few seconds.
-- Camera follows the moving point; manual camera interaction updates follow offset.
+## Trajectory Model
 
-## Trajectory Model (Approximate)
+Trajectory is estimated in `computeTrajectory()` (`src/lib/sensor.ts`) using dead reckoning:
 
-Trajectory is estimated from sensor data in `computeTrajectory()`:
+- Gyro integration for orientation
+- Gravity-based tilt correction
+- Filtered acceleration integration to velocity and position
+- Damping and deadband to reduce drift
 
-- Integrates gyro for orientation.
-- Uses gravity for tilt correction (complementary correction).
-- Uses `userAcceleration` directly (no gravity subtraction).
-- Applies low-pass filtering + deadband on acceleration.
-- Converts g to m/s² with `9.80665`.
-- Integrates velocity and position with damping to reduce drift.
-
-This is dead-reckoning, so long segments can still drift.
+Long sequences will still accumulate positional error.
 
 ## Project Structure
 
 ```text
 src/
-  App.tsx                       # Top-level state and layout
-  App.css                       # App styling and responsive layout
+  App.tsx                      # main state, layout, and orchestration
   components/
-    SensorChartCard.tsx         # One collapsible chart card (A/G/Gravity)
-    PlaybackPanel.tsx           # Three.js playback and controls
+    PlaybackPanel.tsx          # Three.js scene + playback controls
+    SensorChartCard.tsx        # interactive chart card per sensor group
   lib/
-    sensor.ts                   # CSV parsing + trajectory/model utilities
+    sensor.ts                  # CSV parsing, chart utilities, trajectory
+    labels.ts                  # manual label range types + overlay colors
 ```
 
 ## Known Limitations
 
-- Timestamp quality strongly affects integration stability.
-- No magnetometer fusion, so yaw can drift.
-- Dead-reckoning is inherently noisy over longer durations.
+- Dead-reckoning drift increases over time
+- No magnetometer fusion (yaw drift possible)
+- Labels are manual and depend on user consistency
+- Timestamp quality strongly affects integration stability
 
-## Recommended Data Capture Improvements
+## Data Capture Tip
 
-On Apple Watch, prefer `motion.timestamp` over wall-clock time for integration stability.
-
-Current logging pattern (for reference):
-
-```swift
-let timestamp = Date().timeIntervalSince1970
-let acceleration = motion.userAcceleration
-let gyro = motion.rotationRate
-let gravity = motion.gravity
-```
-
-Switching to `motion.timestamp` is recommended for best trajectory quality.
+For Apple Watch logging, prefer `motion.timestamp` over wall-clock timestamps for better integration consistency.

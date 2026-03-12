@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PlaybackPanel } from './components/PlaybackPanel'
 import { SensorChartCard } from './components/SensorChartCard'
-import { detectMotionRanges } from './lib/motionProcessing'
 import { CHART_GROUPS, clamp, computeTrajectory, fmt, parseCsv } from './lib/sensor'
+import { parseLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
 import type { Sample } from './lib/sensor'
 import './App.css'
 
@@ -19,6 +19,9 @@ function App() {
   const [playbackIndex, setPlaybackIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [playbackSource, setPlaybackSource] = useState<'view' | 'selection'>('view')
+  const [labeledRanges, setLabeledRanges] = useState<LabeledRange[]>([])
+  const [rangeLabelInput, setRangeLabelInput] = useState('')
+  const [sourceFileName, setSourceFileName] = useState('motion')
 
   const chartRef = useRef<HTMLDivElement | null>(null)
 
@@ -58,13 +61,24 @@ function App() {
     if (!playbackWindow) return []
     return computeTrajectory(points, playbackWindow.start, playbackWindow.end)
   }, [playbackWindow, points])
-  const motionRanges = useMemo(() => detectMotionRanges(points), [points])
+
+  const selectedRangeBounds = useMemo(() => {
+    if (!selection) return null
+    return {
+      start: Math.min(selection.start, selection.end),
+      end: Math.max(selection.start, selection.end),
+    }
+  }, [selection])
 
   const currentTrajectoryPoint = useMemo(() => {
     if (!playbackWindow || !trajectory.length) return null
     const idx = clamp(playbackIndex - playbackWindow.start, 0, trajectory.length - 1)
     return trajectory[idx]
   }, [playbackIndex, playbackWindow, trajectory])
+  const selectedSampleCount = selectedRangeBounds
+    ? Math.abs(selectedRangeBounds.end - selectedRangeBounds.start) + 1
+    : 0
+  const canAddLabeledRange = Boolean(points.length && selectedRangeBounds && rangeLabelInput.trim())
 
   useEffect(() => {
     if (!playbackWindow || !points.length || !playing) return
@@ -104,16 +118,108 @@ function App() {
     setViewEnd(nextStart + windowSize)
   }
 
-  const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const addLabeledRange = () => {
+    if (!selectedRangeBounds || !points.length) return
+
+    const label = rangeLabelInput.trim()
+    if (!label) return
+
+    const startIndex = clamp(selectedRangeBounds.start, 0, points.length - 1)
+    const endIndex = clamp(selectedRangeBounds.end, startIndex, points.length - 1)
+    const startTimeSec = points[startIndex].t
+    const endTimeSec = points[endIndex].t
+
+    const nextRange: LabeledRange = {
+      id: `range-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      startIndex,
+      endIndex,
+      startTimeSec,
+      endTimeSec,
+      durationSec: Math.max(0, endTimeSec - startTimeSec),
+      sampleCount: endIndex - startIndex + 1,
+    }
+
+    setLabeledRanges((prev) => sortLabeledRanges([...prev, nextRange]))
+  }
+
+  const removeLabeledRange = (id: string) => {
+    setLabeledRanges((prev) => prev.filter((range) => range.id !== id))
+  }
+
+  const exportLabeledRanges = () => {
+    if (!labeledRanges.length) return
+
+    const escapeCsv = (value: string | number) => {
+      const text = String(value)
+      if (!/[",\n]/.test(text)) return text
+      return `"${text.replace(/"/g, '""')}"`
+    }
+
+    const header = [
+      'label',
+      'startIndex',
+      'endIndex',
+      'startTimeSec',
+      'endTimeSec',
+      'durationSec',
+      'sampleCount',
+    ]
+    const rows = sortLabeledRanges(labeledRanges).map((range) =>
+      [
+        range.label,
+        range.startIndex,
+        range.endIndex,
+        range.startTimeSec.toFixed(6),
+        range.endTimeSec.toFixed(6),
+        range.durationSec.toFixed(6),
+        range.sampleCount,
+      ]
+        .map(escapeCsv)
+        .join(','),
+    )
+
+    const csv = [header.join(','), ...rows].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    const base = sourceFileName.replace(/\.[^/.]+$/, '') || 'motion'
+    link.href = url
+    link.download = `${base}-labeled-ranges.csv`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+  }
+
+  const onLabelsFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
     try {
       const text = await file.text()
+      const imported = parseLabeledRangesCsv(text, points)
+      setLabeledRanges((prev) => sortLabeledRanges([...prev, ...imported]))
+      setError('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to parse labels CSV')
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setSourceFileName(file.name)
+      const text = await file.text()
       const parsed = parseCsv(text)
       if (!parsed.length) {
         setError('No numeric rows found in CSV.')
         setPoints([])
+        setLabeledRanges([])
         return
       }
 
@@ -124,10 +230,12 @@ function App() {
       setSelection(null)
       setPlaying(false)
       setPlaybackSource('view')
+      setLabeledRanges([])
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse CSV')
       setPoints([])
+      setLabeledRanges([])
     }
   }
 
@@ -202,6 +310,53 @@ function App() {
                 </button>
               </div>
 
+              <section className="labelingPanel">
+                <div className="labelingHeader">
+                  <b>Manual Labels</b>
+                  <span>{labeledRanges.length.toLocaleString()} saved</span>
+                </div>
+                <div className="labelingRow">
+                  <input
+                    value={rangeLabelInput}
+                    onChange={(e) => setRangeLabelInput(e.target.value)}
+                    placeholder="Label name (e.g. run, swing, walk)"
+                  />
+                  <label className="inlineFileInput">
+                    <span>Load Labels CSV</span>
+                    <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
+                  </label>
+                  <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
+                    Add Selected Range
+                  </button>
+                  <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
+                    Export Labels CSV
+                  </button>
+                  <button onClick={() => setLabeledRanges([])} disabled={!labeledRanges.length}>
+                    Clear Labels
+                  </button>
+                </div>
+                <p className="labelingHint">
+                  {selectedRangeBounds
+                    ? `Selected ${selectedSampleCount.toLocaleString()} samples (${fmt(
+                        points[selectedRangeBounds.start].t,
+                      )}s to ${fmt(points[selectedRangeBounds.end].t)}s)`
+                    : 'Drag on any chart to select a range, then add a label.'}
+                </p>
+                {!!labeledRanges.length && (
+                  <div className="rangeList">
+                    {labeledRanges.map((range) => (
+                      <div key={range.id} className="rangeListItem">
+                        <span>
+                          <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
+                          {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples)
+                        </span>
+                        <button onClick={() => removeLabeledRange(range.id)}>Remove</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+
               <label className="scrollRow">
                 <span>Scroll window</span>
                 <input
@@ -233,7 +388,7 @@ function App() {
                   </span>
                 )}
                 <span>
-                  Motions: <b>{motionRanges.length}</b>
+                  Labeled Ranges: <b>{labeledRanges.length}</b>
                 </span>
               </div>
             </section>
@@ -243,6 +398,7 @@ function App() {
                 key={group.title}
                 title={group.title}
                 keys={group.keys}
+                unit={group.unit}
                 points={points}
                 chartWidth={chartWidth}
                 viewStart={viewStart}
@@ -253,7 +409,7 @@ function App() {
                 isSelecting={isSelecting}
                 isScrubbing={isScrubbing}
                 playbackIndex={playbackIndex}
-                motionRanges={motionRanges}
+                motionRanges={labeledRanges}
                 setIsSelecting={setIsSelecting}
                 setSelectionAnchor={setSelectionAnchor}
                 setSelection={setSelection}

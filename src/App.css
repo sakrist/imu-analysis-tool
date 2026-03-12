@@ -104,6 +104,88 @@
   gap: 0.45rem;
 }
 
+.labelingPanel {
+  margin-top: 0.85rem;
+  border: 1px solid #e5dac9;
+  border-radius: 0.7rem;
+  background: #fffdf9;
+  padding: 0.7rem;
+}
+
+.labelingHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.8rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.labelingRow {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.labelingRow input {
+  min-width: 200px;
+  flex: 1 1 240px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.42rem 0.78rem;
+  color: var(--ink);
+  background: #fff;
+}
+
+.inlineFileInput {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 999px;
+  padding: 0.42rem 0.78rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.inlineFileInput input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.labelingHint {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.rangeList {
+  margin-top: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.rangeListItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  border: 1px solid #eadfce;
+  border-radius: 0.6rem;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.84rem;
+  color: var(--muted);
+}
+
 button {
   border: 1px solid var(--line);
   background: #fff;
@@ -220,6 +302,29 @@ button:disabled {
   stroke-width: 1;
 }
 
+.axisLine {
+  stroke: #d7cdbf;
+  stroke-width: 1;
+}
+
+.axisTick {
+  stroke: #cbbca7;
+  stroke-width: 1;
+}
+
+.axisText {
+  fill: #6d665d;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.axisUnit {
+  fill: #544d45;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .selection {
   fill: rgba(231, 111, 81, 0.18);
 }
@@ -310,5 +415,15 @@ button:disabled {
   .scrollRow {
     grid-template-columns: 1fr;
     gap: 0.4rem;
+  }
+
+  .labelingRow input {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .rangeListItem {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }

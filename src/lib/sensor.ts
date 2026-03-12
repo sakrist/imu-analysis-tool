@@ -16,10 +16,10 @@ export type Sample = {
   grz: number
 }
 
-export const CHART_GROUPS: Array<{ title: string; keys: AxisKey[] }> = [
-  { title: 'Acceleration', keys: ['ax', 'ay', 'az'] },
-  { title: 'Gyroscope', keys: ['gx', 'gy', 'gz'] },
-  { title: 'Gravity', keys: ['grx', 'gry', 'grz'] },
+export const CHART_GROUPS: Array<{ title: string; keys: AxisKey[]; unit: string }> = [
+  { title: 'Acceleration', keys: ['ax', 'ay', 'az'], unit: 'g' },
+  { title: 'Gyroscope', keys: ['gx', 'gy', 'gz'], unit: 'rad/s' },
+  { title: 'Gravity', keys: ['grx', 'gry', 'grz'], unit: 'g' },
 ]
 
 export const COLORS: Record<AxisKey, string> = {

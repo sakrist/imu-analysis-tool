@@ -1,14 +1,32 @@
 import { useState } from 'react'
-import { MOTION_BORDERS, MOTION_COLORS } from '../lib/motionProcessing'
+import { rangeColors } from '../lib/labels'
 import { COLORS, clamp, sampleVisible, toPath } from '../lib/sensor'
 import type { AxisKey, Sample } from '../lib/sensor'
-import type { MotionRange } from '../lib/motionProcessing'
+import type { LabeledRange } from '../lib/labels'
 
 type Selection = { start: number; end: number } | null
+
+const PLOT_LEFT = 56
+const PLOT_RIGHT = 10
+const PLOT_TOP = 10
+const PLOT_HEIGHT = 182
+const PLOT_BOTTOM = 28
+const SVG_HEIGHT = PLOT_TOP + PLOT_HEIGHT + PLOT_BOTTOM
+
+const AXIS_TICK_RATIOS = [0, 0.25, 0.5, 0.75, 1]
+
+function formatScaleValue(value: number) {
+  const abs = Math.abs(value)
+  if (abs >= 100) return value.toFixed(1)
+  if (abs >= 10) return value.toFixed(2)
+  if (abs >= 1) return value.toFixed(3)
+  return value.toFixed(4)
+}
 
 type SensorChartCardProps = {
   title: string
   keys: AxisKey[]
+  unit: string
   points: Sample[]
   chartWidth: number
   viewStart: number
@@ -19,7 +37,7 @@ type SensorChartCardProps = {
   isSelecting: boolean
   isScrubbing: boolean
   playbackIndex: number
-  motionRanges: MotionRange[]
+  motionRanges: LabeledRange[]
   setIsSelecting: (value: boolean) => void
   setSelectionAnchor: (value: number | null) => void
   setSelection: (value: Selection) => void
@@ -33,6 +51,7 @@ type SensorChartCardProps = {
 export function SensorChartCard({
   title,
   keys,
+  unit,
   points,
   chartWidth,
   viewStart,
@@ -55,11 +74,17 @@ export function SensorChartCard({
 }: SensorChartCardProps) {
   const [collapsed, setCollapsed] = useState(false)
 
+  const plotWidth = Math.max(140, chartWidth - PLOT_LEFT - PLOT_RIGHT)
+  const xRange = Math.max(1, viewEnd - viewStart)
+  const sampleWidthPx = plotWidth / xRange
+
+  const indexToPlotX = (index: number) => ((index - viewStart) / xRange) * plotWidth
+
   const chartPointerToIndex = (clientX: number, target: SVGSVGElement | null) => {
     if (!target || !points.length) return null
     const bounds = target.getBoundingClientRect()
-    const ratio = clamp((clientX - bounds.left) / bounds.width, 0, 1)
-    return Math.round(viewStart + ratio * (viewEnd - viewStart))
+    const ratio = clamp((clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
+    return Math.round(viewStart + ratio * xRange)
   }
 
   const updatePlaybackFromPointer = (clientX: number, target: SVGSVGElement | null) => {
@@ -69,14 +94,16 @@ export function SensorChartCard({
     setPlaybackIndex(index)
   }
 
-  const allSeries = collapsed ? [] : keys.map((key) => sampleVisible(points, key, viewStart, viewEnd, chartWidth))
+  const allSeries = collapsed ? [] : keys.map((key) => sampleVisible(points, key, viewStart, viewEnd, plotWidth))
   const yValues = allSeries.flatMap((series) => series.map((p) => p.v))
   const yMin = yValues.length ? Math.min(...yValues) : -1
   const yMax = yValues.length ? Math.max(...yValues) : 1
   const yPad = (yMax - yMin || 1) * 0.1
-  const playheadX = collapsed
-    ? 0
-    : ((clamp(playbackIndex, viewStart, viewEnd) - viewStart) / Math.max(1, viewEnd - viewStart)) * chartWidth
+  const yStart = yMin - yPad
+  const yEnd = yMax + yPad
+  const yRange = Math.max(1e-9, yEnd - yStart)
+
+  const playheadX = collapsed ? 0 : PLOT_LEFT + indexToPlotX(clamp(playbackIndex, viewStart, viewEnd))
   const visibleMotionRanges = collapsed
     ? []
     : motionRanges.filter((range) => range.endIndex >= viewStart && range.startIndex <= viewEnd)
@@ -114,11 +141,11 @@ export function SensorChartCard({
         <svg
           className="chart"
           width={chartWidth}
-          height={200}
+          height={SVG_HEIGHT}
           onWheel={(e) => {
             e.preventDefault()
             const bounds = e.currentTarget.getBoundingClientRect()
-            const ratio = clamp((e.clientX - bounds.left) / bounds.width, 0, 1)
+            const ratio = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
             if (Math.abs(e.deltaY) < 4) return
             if (e.ctrlKey || e.metaKey) {
               zoom(e.deltaY > 0 ? 1.12 : 0.88, ratio)
@@ -155,36 +182,83 @@ export function SensorChartCard({
             e.currentTarget.releasePointerCapture(e.pointerId)
           }}
         >
-          <rect x={0} y={0} width={chartWidth} height={200} className="chartBg" />
+          <rect x={PLOT_LEFT} y={PLOT_TOP} width={plotWidth} height={PLOT_HEIGHT} className="chartBg" />
 
-          {[0.25, 0.5, 0.75].map((v) => (
-            <line key={v} x1={0} y1={200 * v} x2={chartWidth} y2={200 * v} className="gridLine" />
-          ))}
+          <line
+            x1={PLOT_LEFT}
+            y1={PLOT_TOP}
+            x2={PLOT_LEFT}
+            y2={PLOT_TOP + PLOT_HEIGHT}
+            className="axisLine"
+          />
+          <line
+            x1={PLOT_LEFT}
+            y1={PLOT_TOP + PLOT_HEIGHT}
+            x2={PLOT_LEFT + plotWidth}
+            y2={PLOT_TOP + PLOT_HEIGHT}
+            className="axisLine"
+          />
+
+          {AXIS_TICK_RATIOS.map((ratio) => {
+            const y = PLOT_TOP + ratio * PLOT_HEIGHT
+            const value = yEnd - ratio * yRange
+            return (
+              <g key={`y-${ratio}`}>
+                {ratio > 0 && ratio < 1 && (
+                  <line x1={PLOT_LEFT} y1={y} x2={PLOT_LEFT + plotWidth} y2={y} className="gridLine" />
+                )}
+                <line x1={PLOT_LEFT - 4} y1={y} x2={PLOT_LEFT} y2={y} className="axisTick" />
+                <text x={PLOT_LEFT - 8} y={y + 4} textAnchor="end" className="axisText">
+                  {formatScaleValue(value)}
+                </text>
+              </g>
+            )
+          })}
+
+          {AXIS_TICK_RATIOS.map((ratio) => {
+            const x = PLOT_LEFT + ratio * plotWidth
+            const index = Math.round(viewStart + ratio * xRange)
+            const timeValue = points[index]?.t ?? 0
+            return (
+              <g key={`x-${ratio}`}>
+                <line x1={x} y1={PLOT_TOP + PLOT_HEIGHT} x2={x} y2={PLOT_TOP + PLOT_HEIGHT + 4} className="axisTick" />
+                <text x={x} y={PLOT_TOP + PLOT_HEIGHT + 16} textAnchor="middle" className="axisText">
+                  {timeValue.toFixed(2)}
+                </text>
+              </g>
+            )
+          })}
+
+          <text x={PLOT_LEFT + 2} y={PLOT_TOP - 2} className="axisUnit">
+            {unit}
+          </text>
+          <text x={PLOT_LEFT + plotWidth} y={PLOT_TOP + PLOT_HEIGHT + 26} textAnchor="end" className="axisUnit">
+            time (s)
+          </text>
 
           {visibleMotionRanges.map((range) => {
             const start = clamp(range.startIndex, viewStart, viewEnd)
             const end = clamp(range.endIndex, viewStart, viewEnd)
-            const x =
-              ((Math.min(start, end) - viewStart) / Math.max(1, viewEnd - viewStart)) * chartWidth
-            const width =
-              (Math.max(1, Math.abs(end - start)) / Math.max(1, viewEnd - viewStart)) * chartWidth
+            const x = PLOT_LEFT + indexToPlotX(Math.min(start, end))
+            const width = Math.max(sampleWidthPx, (Math.abs(end - start) / xRange) * plotWidth)
             const mid = x + width / 2
+            const colors = rangeColors(range.label)
 
             return (
-              <g key={`${range.label}-${range.startIndex}-${range.endIndex}`} className="motionRangeGroup">
+              <g key={range.id} className="motionRangeGroup">
                 <rect
                   x={x}
-                  y={0}
+                  y={PLOT_TOP}
                   width={width}
-                  height={200}
+                  height={PLOT_HEIGHT}
                   style={{
-                    fill: MOTION_COLORS[range.label],
-                    stroke: MOTION_BORDERS[range.label],
+                    fill: colors.fill,
+                    stroke: colors.border,
                   }}
                   className="motionRange"
                 />
                 {width > 64 && (
-                  <text x={mid} y={16} textAnchor="middle" className="motionRangeLabel">
+                  <text x={mid} y={PLOT_TOP + 14} textAnchor="middle" className="motionRangeLabel">
                     {range.label}
                   </text>
                 )}
@@ -195,7 +269,8 @@ export function SensorChartCard({
           {keys.map((key, idx) => (
             <path
               key={key}
-              d={toPath(allSeries[idx], viewStart, viewEnd, yMin - yPad, yMax + yPad, chartWidth, 200)}
+              d={toPath(allSeries[idx], viewStart, viewEnd, yStart, yEnd, plotWidth, PLOT_HEIGHT)}
+              transform={`translate(${PLOT_LEFT} ${PLOT_TOP})`}
               stroke={COLORS[key]}
               fill="none"
               strokeWidth={1.4}
@@ -205,21 +280,19 @@ export function SensorChartCard({
           {selection && (
             <rect
               className="selection"
-              x={
-                ((Math.min(selection.start, selection.end) - viewStart) / Math.max(1, viewEnd - viewStart)) * chartWidth
-              }
-              y={0}
-              width={(Math.abs(selection.end - selection.start) / Math.max(1, viewEnd - viewStart)) * chartWidth}
-              height={200}
+              x={PLOT_LEFT + indexToPlotX(Math.min(selection.start, selection.end))}
+              y={PLOT_TOP}
+              width={Math.max(sampleWidthPx, (Math.abs(selection.end - selection.start) / xRange) * plotWidth)}
+              height={PLOT_HEIGHT}
             />
           )}
 
-          <line x1={playheadX} y1={0} x2={playheadX} y2={200} className="playheadLine" />
+          <line x1={playheadX} y1={PLOT_TOP} x2={playheadX} y2={PLOT_TOP + PLOT_HEIGHT} className="playheadLine" />
           <rect
             x={playheadX - 7}
-            y={0}
+            y={PLOT_TOP}
             width={14}
-            height={200}
+            height={PLOT_HEIGHT}
             className="playheadHit"
             onPointerDown={(e) => {
               e.stopPropagation()
