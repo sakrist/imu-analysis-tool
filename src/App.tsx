@@ -244,7 +244,7 @@ function App() {
     <div className="app">
       <header className="toolbar">
         <div>
-          <h1>Motion CSV Analyzer</h1>
+          <h1>IMU Motion CSV Analyzer + labeler</h1>
           <p>timestamp + accel + gyro + gravity with zoom, pan, selection, and playback.</p>
         </div>
         <label className="fileInput">
