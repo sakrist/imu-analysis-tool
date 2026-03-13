@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "hurley-dev-tool",
+      "name": "imu-analysis-tool",
       "dependencies": {
         "@types/three": "^0.183.1",
         "react": "^19.2.0",

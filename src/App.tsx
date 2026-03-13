@@ -368,19 +368,19 @@ function App() {
                       onChange={(e) => setRangeLabelInput(e.target.value)}
                       placeholder="Label name (e.g. run, swing, walk)"
                     />
-                    <label className="inlineFileInput">
-                      <span>Load Labels CSV</span>
-                      <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
-                    </label>
                     <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
                       Add Selected Range
-                    </button>
-                    <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
-                      Export Labels CSV
                     </button>
                     <button onClick={() => setLabeledRanges([])} disabled={!labeledRanges.length}>
                       Clear Labels
                     </button>
+                    <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
+                      Export Labels CSV
+                    </button>
+                    <label className="inlineFileInput">
+                      <span>Load Labels CSV</span>
+                      <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
+                    </label>
                   </div>
                   <p className="labelingHint">
                     {selectedRangeBounds
