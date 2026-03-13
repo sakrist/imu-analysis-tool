@@ -143,17 +143,23 @@ export function SensorChartCard({
           width={chartWidth}
           height={SVG_HEIGHT}
           onWheel={(e) => {
-            e.preventDefault()
             const bounds = e.currentTarget.getBoundingClientRect()
             const ratio = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
-            if (Math.abs(e.deltaY) < 4) return
+
             if (e.ctrlKey || e.metaKey) {
+              if (Math.abs(e.deltaY) < 4) return
+              e.preventDefault()
               zoom(e.deltaY > 0 ? 1.12 : 0.88, ratio)
-            } else {
-              pan(Math.round((e.deltaY / 100) * Math.max(4, viewSize * 0.05)))
+              return
             }
+
+            const horizontalDelta = e.shiftKey ? e.deltaY : e.deltaX
+            if (Math.abs(horizontalDelta) < 4) return
+            e.preventDefault()
+            pan(Math.round((horizontalDelta / 100) * Math.max(4, viewSize * 0.05)))
           }}
           onPointerDown={(e) => {
+            e.preventDefault()
             const index = chartPointerToIndex(e.clientX, e.currentTarget)
             if (index === null) return
             setSelectionAnchor(index)
@@ -163,10 +169,12 @@ export function SensorChartCard({
           }}
           onPointerMove={(e) => {
             if (isScrubbing) {
+              e.preventDefault()
               updatePlaybackFromPointer(e.clientX, e.currentTarget)
               return
             }
             if (!isSelecting || selectionAnchor === null) return
+            e.preventDefault()
             const index = chartPointerToIndex(e.clientX, e.currentTarget)
             if (index === null) return
             setSelection({ start: selectionAnchor, end: index })
@@ -295,6 +303,7 @@ export function SensorChartCard({
             height={PLOT_HEIGHT}
             className="playheadHit"
             onPointerDown={(e) => {
+              e.preventDefault()
               e.stopPropagation()
               setPlaying(false)
               setIsScrubbing(true)

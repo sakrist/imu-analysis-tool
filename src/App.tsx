@@ -22,6 +22,7 @@ function App() {
   const [labeledRanges, setLabeledRanges] = useState<LabeledRange[]>([])
   const [rangeLabelInput, setRangeLabelInput] = useState('')
   const [sourceFileName, setSourceFileName] = useState('motion')
+  const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
 
   const chartRef = useRef<HTMLDivElement | null>(null)
 
@@ -310,53 +311,6 @@ function App() {
                 </button>
               </div>
 
-              <section className="labelingPanel">
-                <div className="labelingHeader">
-                  <b>Manual Labels</b>
-                  <span>{labeledRanges.length.toLocaleString()} saved</span>
-                </div>
-                <div className="labelingRow">
-                  <input
-                    value={rangeLabelInput}
-                    onChange={(e) => setRangeLabelInput(e.target.value)}
-                    placeholder="Label name (e.g. run, swing, walk)"
-                  />
-                  <label className="inlineFileInput">
-                    <span>Load Labels CSV</span>
-                    <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
-                  </label>
-                  <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
-                    Add Selected Range
-                  </button>
-                  <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
-                    Export Labels CSV
-                  </button>
-                  <button onClick={() => setLabeledRanges([])} disabled={!labeledRanges.length}>
-                    Clear Labels
-                  </button>
-                </div>
-                <p className="labelingHint">
-                  {selectedRangeBounds
-                    ? `Selected ${selectedSampleCount.toLocaleString()} samples (${fmt(
-                        points[selectedRangeBounds.start].t,
-                      )}s to ${fmt(points[selectedRangeBounds.end].t)}s)`
-                    : 'Drag on any chart to select a range, then add a label.'}
-                </p>
-                {!!labeledRanges.length && (
-                  <div className="rangeList">
-                    {labeledRanges.map((range) => (
-                      <div key={range.id} className="rangeListItem">
-                        <span>
-                          <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
-                          {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples)
-                        </span>
-                        <button onClick={() => removeLabeledRange(range.id)}>Remove</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </section>
-
               <label className="scrollRow">
                 <span>Scroll window</span>
                 <input
@@ -391,6 +345,65 @@ function App() {
                   Labeled Ranges: <b>{labeledRanges.length}</b>
                 </span>
               </div>
+            </section>
+
+            <section className="labelingCard">
+              <div className="labelingHeader">
+                <button
+                  className="collapseToggle"
+                  onClick={() => setIsLabelingCollapsed((prev) => !prev)}
+                  aria-expanded={!isLabelingCollapsed}
+                  aria-label={`${isLabelingCollapsed ? 'Expand' : 'Collapse'} Manual Labels`}
+                >
+                  <span>{isLabelingCollapsed ? '▸' : '▾'}</span>
+                  <span>Manual Labels</span>
+                </button>
+                <span>{labeledRanges.length.toLocaleString()} saved</span>
+              </div>
+              {!isLabelingCollapsed && (
+                <div className="labelingBody">
+                  <div className="labelingRow">
+                    <input
+                      value={rangeLabelInput}
+                      onChange={(e) => setRangeLabelInput(e.target.value)}
+                      placeholder="Label name (e.g. run, swing, walk)"
+                    />
+                    <label className="inlineFileInput">
+                      <span>Load Labels CSV</span>
+                      <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
+                    </label>
+                    <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
+                      Add Selected Range
+                    </button>
+                    <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
+                      Export Labels CSV
+                    </button>
+                    <button onClick={() => setLabeledRanges([])} disabled={!labeledRanges.length}>
+                      Clear Labels
+                    </button>
+                  </div>
+                  <p className="labelingHint">
+                    {selectedRangeBounds
+                      ? `Selected ${selectedSampleCount.toLocaleString()} samples (${fmt(
+                          points[selectedRangeBounds.start].t,
+                        )}s to ${fmt(points[selectedRangeBounds.end].t)}s)`
+                      : 'Drag on any chart to select a range, then add a label.'}
+                  </p>
+                  {!!labeledRanges.length && (
+                    <div className="rangeList">
+                      {labeledRanges.map((range) => (
+                        <div key={range.id} className="rangeListItem">
+                          <span>
+                            <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
+                            {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples)
+                          </span>
+                          <button onClick={() => removeLabeledRange(range.id)}>Remove</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </section>
 
             {CHART_GROUPS.map((group) => (

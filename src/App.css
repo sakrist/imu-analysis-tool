@@ -69,7 +69,8 @@
 
 .controls,
 .chartCard,
-.playbackCard {
+.playbackCard,
+.labelingCard {
   border: 1px solid var(--line);
   border-radius: 0.9rem;
   background: var(--surface);
@@ -104,21 +105,19 @@
   gap: 0.45rem;
 }
 
-.labelingPanel {
-  margin-top: 0.85rem;
-  border: 1px solid #e5dac9;
-  border-radius: 0.7rem;
-  background: #fffdf9;
-  padding: 0.7rem;
-}
-
 .labelingHeader {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 0.8rem;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.labelingBody {
+  margin-top: 0.35rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #e8dece;
 }
 
 .labelingRow {
@@ -227,7 +226,8 @@ button:disabled {
 }
 
 .chartCard,
-.playbackCard {
+.playbackCard,
+.labelingCard {
   margin-bottom: 0.9rem;
   padding: 0.8rem;
 }
@@ -291,6 +291,14 @@ button:disabled {
   width: 100%;
   display: block;
   touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.chart * {
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
 }
 
 .chartBg {
