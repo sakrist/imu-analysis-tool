@@ -23,7 +23,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
+      - run: npm ci --include=optional
+      - name: Workaround npm optional deps bug (Rollup native)
+        run: npm i --no-save @rollup/rollup-linux-x64-gnu
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

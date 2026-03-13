@@ -2,6 +2,8 @@
 
 Browser tool to inspect IMU CSV logs, label motion ranges, and replay motion in a 3D trajectory view.
 
+Live URL: `https://sakrist.github.io/imu-analysis-tool/`
+
 ## Features
 
 - Load CSV with acceleration, gyroscope, and gravity channels
