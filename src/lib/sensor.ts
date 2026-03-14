@@ -16,8 +16,8 @@ export type Sample = {
   grz: number
 }
 
-export const CHART_GROUPS: Array<{ title: string; keys: AxisKey[]; unit: string }> = [
-  { title: 'Acceleration', keys: ['ax', 'ay', 'az'], unit: 'g' },
+export const CHART_GROUPS: Array<{ title: string; keys: AxisKey[]; unit: string; yDomain?: [number, number] }> = [
+  { title: 'Acceleration', keys: ['ax', 'ay', 'az'], unit: 'g', yDomain: [-16, 16] },
   { title: 'Gyroscope', keys: ['gx', 'gy', 'gz'], unit: 'rad/s' },
   { title: 'Gravity', keys: ['grx', 'gry', 'grz'], unit: 'g' },
 ]

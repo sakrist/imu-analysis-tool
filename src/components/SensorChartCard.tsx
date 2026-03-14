@@ -27,6 +27,7 @@ type SensorChartCardProps = {
   title: string
   keys: AxisKey[]
   unit: string
+  fixedYDomain?: [number, number]
   points: Sample[]
   chartWidth: number
   viewStart: number
@@ -52,6 +53,7 @@ export function SensorChartCard({
   title,
   keys,
   unit,
+  fixedYDomain,
   points,
   chartWidth,
   viewStart,
@@ -99,8 +101,8 @@ export function SensorChartCard({
   const yMin = yValues.length ? Math.min(...yValues) : -1
   const yMax = yValues.length ? Math.max(...yValues) : 1
   const yPad = (yMax - yMin || 1) * 0.1
-  const yStart = yMin - yPad
-  const yEnd = yMax + yPad
+  const yStart = fixedYDomain ? Math.min(fixedYDomain[0], fixedYDomain[1]) : yMin - yPad
+  const yEnd = fixedYDomain ? Math.max(fixedYDomain[0], fixedYDomain[1]) : yMax + yPad
   const yRange = Math.max(1e-9, yEnd - yStart)
 
   const playheadX = collapsed ? 0 : PLOT_LEFT + indexToPlotX(clamp(playbackIndex, viewStart, viewEnd))

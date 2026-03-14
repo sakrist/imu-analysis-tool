@@ -412,6 +412,7 @@ function App() {
                 title={group.title}
                 keys={group.keys}
                 unit={group.unit}
+                fixedYDomain={group.yDomain}
                 points={points}
                 chartWidth={chartWidth}
                 viewStart={viewStart}
