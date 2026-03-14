@@ -1,58 +1,48 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState, type ChangeEvent } from 'react'
 import { PlaybackPanel } from './components/PlaybackPanel'
 import { SensorChartCard } from './components/SensorChartCard'
+import { useChartWidth } from './hooks/useChartWidth'
+import { useGlobalHotkeys } from './hooks/useGlobalHotkeys'
+import { useObjectUrlFile } from './hooks/useObjectUrlFile'
+import { useTimeBasedPlayback } from './hooks/useTimeBasedPlayback'
+import { parseLabeledRangesCsv, serializeLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
+import { type PlaybackSource, normalizeSelection, resolvePlaybackWindow, type Selection } from './lib/playback'
 import { CHART_GROUPS, clamp, computeTrajectory, fmt, parseCsv } from './lib/sensor'
-import { parseLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
 import type { Sample } from './lib/sensor'
 import './App.css'
+
+const AUDIO_FILE_ACCEPT =
+  '.m4a,.wav,.mp3,.caff,.caf,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/mpeg,audio/x-caf,audio/*'
 
 function App() {
   const [points, setPoints] = useState<Sample[]>([])
   const [error, setError] = useState('')
   const [viewStart, setViewStart] = useState(0)
   const [viewEnd, setViewEnd] = useState(0)
-  const [chartWidth, setChartWidth] = useState(1000)
   const [isSelecting, setIsSelecting] = useState(false)
   const [selectionAnchor, setSelectionAnchor] = useState<number | null>(null)
-  const [selection, setSelection] = useState<{ start: number; end: number } | null>(null)
+  const [selection, setSelection] = useState<Selection>(null)
   const [isScrubbing, setIsScrubbing] = useState(false)
   const [playbackIndex, setPlaybackIndex] = useState(0)
   const [playing, setPlaying] = useState(false)
-  const [playbackSource, setPlaybackSource] = useState<'view' | 'selection'>('view')
+  const [playbackSource, setPlaybackSource] = useState<PlaybackSource>('view')
   const [labeledRanges, setLabeledRanges] = useState<LabeledRange[]>([])
   const [rangeLabelInput, setRangeLabelInput] = useState('')
   const [sourceFileName, setSourceFileName] = useState('motion')
   const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
-
-  const chartRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const el = chartRef.current
-    if (!el) return
-
-    const resizeObserver = new ResizeObserver(() => {
-      setChartWidth(Math.max(320, el.clientWidth - 24))
-    })
-    resizeObserver.observe(el)
-    setChartWidth(Math.max(320, el.clientWidth - 24))
-
-    return () => resizeObserver.disconnect()
-  }, [points.length])
+  const [chartContainer, setChartContainer] = useState<HTMLDivElement | null>(null)
+  const chartWidth = useChartWidth(chartContainer)
+  const { fileRef: audioTrack, clear: clearAudioTrack, setFromFile: setAudioFromFile } = useObjectUrlFile()
 
   const viewSize = Math.max(1, viewEnd - viewStart)
 
-  const playbackWindow = useMemo(() => {
-    if (!points.length) return null
-    if (playbackSource === 'selection' && selection) {
-      return {
-        start: Math.min(selection.start, selection.end),
-        end: Math.max(selection.start, selection.end),
-      }
-    }
-    return { start: viewStart, end: viewEnd }
-  }, [playbackSource, points.length, selection, viewStart, viewEnd])
+  const playbackWindow = useMemo(
+    () => resolvePlaybackWindow(points.length, playbackSource, selection, viewStart, viewEnd),
+    [playbackSource, points.length, selection, viewEnd, viewStart],
+  )
 
   const currentPoint = points[clamp(playbackIndex, 0, points.length - 1)]
+
   const playbackSamples = useMemo(() => {
     if (!playbackWindow) return [] as Sample[]
     return points.slice(playbackWindow.start, playbackWindow.end + 1)
@@ -63,63 +53,69 @@ function App() {
     return computeTrajectory(points, playbackWindow.start, playbackWindow.end)
   }, [playbackWindow, points])
 
-  const selectedRangeBounds = useMemo(() => {
-    if (!selection) return null
-    return {
-      start: Math.min(selection.start, selection.end),
-      end: Math.max(selection.start, selection.end),
-    }
-  }, [selection])
+  const selectedRangeBounds = useMemo(() => normalizeSelection(selection), [selection])
 
   const currentTrajectoryPoint = useMemo(() => {
     if (!playbackWindow || !trajectory.length) return null
     const idx = clamp(playbackIndex - playbackWindow.start, 0, trajectory.length - 1)
     return trajectory[idx]
   }, [playbackIndex, playbackWindow, trajectory])
-  const selectedSampleCount = selectedRangeBounds
-    ? Math.abs(selectedRangeBounds.end - selectedRangeBounds.start) + 1
-    : 0
+
+  const selectedSampleCount = selectedRangeBounds ? selectedRangeBounds.end - selectedRangeBounds.start + 1 : 0
   const canAddLabeledRange = Boolean(points.length && selectedRangeBounds && rangeLabelInput.trim())
 
-  useEffect(() => {
-    if (!playbackWindow || !points.length || !playing) return
+  const clearSelectionState = useCallback(() => {
+    setSelection(null)
+    setSelectionAnchor(null)
+    setIsSelecting(false)
+    setIsScrubbing(false)
+  }, [])
 
-    const timer = setInterval(() => {
-      setPlaybackIndex((prev) => {
-        if (prev < playbackWindow.start || prev > playbackWindow.end) return playbackWindow.start
-        const next = prev + 1
-        if (next > playbackWindow.end) {
-          setPlaying(false)
-          return playbackWindow.end
-        }
-        return next
-      })
-    }, 33)
+  useTimeBasedPlayback({
+    points,
+    playbackWindow,
+    playbackIndex,
+    playing,
+    setPlaybackIndex,
+    setPlaying,
+  })
 
-    return () => clearInterval(timer)
-  }, [playbackWindow, playing, points.length])
+  useGlobalHotkeys({
+    playbackWindow,
+    playbackIndex,
+    playing,
+    setPlaybackIndex,
+    setPlaying,
+    clearSelection: clearSelectionState,
+  })
 
-  const zoom = (factor: number, anchorRatio = 0.5) => {
-    if (!points.length) return
-    const fullRange = points.length - 1
-    const oldSize = Math.max(8, viewEnd - viewStart)
-    const nextSize = clamp(Math.round(oldSize * factor), 8, fullRange)
-    const anchor = viewStart + oldSize * anchorRatio
-    const nextStart = clamp(Math.round(anchor - nextSize * anchorRatio), 0, fullRange - nextSize)
-    setViewStart(nextStart)
-    setViewEnd(nextStart + nextSize)
-  }
+  const zoom = useCallback(
+    (factor: number, anchorRatio = 0.5) => {
+      if (!points.length) return
+      const fullRange = points.length - 1
+      const oldSize = Math.max(8, viewEnd - viewStart)
+      const nextSize = clamp(Math.round(oldSize * factor), 8, fullRange)
+      const anchor = viewStart + oldSize * anchorRatio
+      const nextStart = clamp(Math.round(anchor - nextSize * anchorRatio), 0, fullRange - nextSize)
+      setViewStart(nextStart)
+      setViewEnd(nextStart + nextSize)
+    },
+    [points.length, viewEnd, viewStart],
+  )
 
-  const pan = (deltaSamples: number) => {
-    if (!points.length) return
-    const fullRange = points.length - 1
-    const windowSize = viewEnd - viewStart
-    const nextStart = clamp(viewStart + deltaSamples, 0, fullRange - windowSize)
-    setViewStart(nextStart)
-    setViewEnd(nextStart + windowSize)
-  }
+  const pan = useCallback(
+    (deltaSamples: number) => {
+      if (!points.length) return
+      const fullRange = points.length - 1
+      const windowSize = viewEnd - viewStart
+      const nextStart = clamp(viewStart + deltaSamples, 0, fullRange - windowSize)
+      setViewStart(nextStart)
+      setViewEnd(nextStart + windowSize)
+    },
+    [points.length, viewEnd, viewStart],
+  )
 
-  const addLabeledRange = () => {
+  const addLabeledRange = useCallback(() => {
     if (!selectedRangeBounds || !points.length) return
 
     const label = rangeLabelInput.trim()
@@ -142,45 +138,16 @@ function App() {
     }
 
     setLabeledRanges((prev) => sortLabeledRanges([...prev, nextRange]))
-  }
+  }, [points, rangeLabelInput, selectedRangeBounds])
 
-  const removeLabeledRange = (id: string) => {
+  const removeLabeledRange = useCallback((id: string) => {
     setLabeledRanges((prev) => prev.filter((range) => range.id !== id))
-  }
+  }, [])
 
-  const exportLabeledRanges = () => {
+  const exportLabeledRanges = useCallback(() => {
     if (!labeledRanges.length) return
 
-    const escapeCsv = (value: string | number) => {
-      const text = String(value)
-      if (!/[",\n]/.test(text)) return text
-      return `"${text.replace(/"/g, '""')}"`
-    }
-
-    const header = [
-      'label',
-      'startIndex',
-      'endIndex',
-      'startTimeSec',
-      'endTimeSec',
-      'durationSec',
-      'sampleCount',
-    ]
-    const rows = sortLabeledRanges(labeledRanges).map((range) =>
-      [
-        range.label,
-        range.startIndex,
-        range.endIndex,
-        range.startTimeSec.toFixed(6),
-        range.endTimeSec.toFixed(6),
-        range.durationSec.toFixed(6),
-        range.sampleCount,
-      ]
-        .map(escapeCsv)
-        .join(','),
-    )
-
-    const csv = [header.join(','), ...rows].join('\n')
+    const csv = serializeLabeledRangesCsv(labeledRanges)
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -191,25 +158,28 @@ function App() {
     link.click()
     document.body.removeChild(link)
     URL.revokeObjectURL(url)
-  }
+  }, [labeledRanges, sourceFileName])
 
-  const onLabelsFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
+  const onLabelsFileChange = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      if (!file) return
 
-    try {
-      const text = await file.text()
-      const imported = parseLabeledRangesCsv(text, points)
-      setLabeledRanges((prev) => sortLabeledRanges([...prev, ...imported]))
-      setError('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to parse labels CSV')
-    } finally {
-      event.target.value = ''
-    }
-  }
+      try {
+        const text = await file.text()
+        const imported = parseLabeledRangesCsv(text, points)
+        setLabeledRanges((prev) => sortLabeledRanges([...prev, ...imported]))
+        setError('')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to parse labels CSV')
+      } finally {
+        event.target.value = ''
+      }
+    },
+    [points],
+  )
 
-  const onFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -238,7 +208,15 @@ function App() {
       setPoints([])
       setLabeledRanges([])
     }
-  }
+  }, [])
+
+  const onAudioFileChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      setAudioFromFile(event.target.files?.[0])
+      event.target.value = ''
+    },
+    [setAudioFromFile],
+  )
 
   return (
     <div className="app">
@@ -247,10 +225,19 @@ function App() {
           <h1>IMU Motion CSV Analyzer + labeler</h1>
           <p>timestamp + accel + gyro + gravity with zoom, pan, selection, and playback.</p>
         </div>
-        <label className="fileInput">
-          <span>Load CSV</span>
-          <input type="file" accept=".csv,text/csv" onChange={onFileChange} />
-        </label>
+        <div className="toolbarActions">
+          <label className="fileInput">
+            <span>Load CSV</span>
+            <input type="file" accept=".csv,text/csv" onChange={onFileChange} />
+          </label>
+          <label className="fileInput">
+            <span>Load Audio</span>
+            <input type="file" accept={AUDIO_FILE_ACCEPT} onChange={onAudioFileChange} />
+          </label>
+          <button onClick={clearAudioTrack} disabled={!audioTrack}>
+            Clear Audio
+          </button>
+        </div>
       </header>
 
       {error && <p className="error">{error}</p>}
@@ -276,10 +263,12 @@ function App() {
               currentPoint={currentPoint}
               currentTrajectoryPoint={currentTrajectoryPoint}
               trajectory={trajectory}
+              audioSrc={audioTrack?.url ?? null}
+              audioName={audioTrack?.name ?? null}
             />
           </div>
 
-          <div className="workspaceRight" ref={chartRef}>
+          <div className="workspaceRight" ref={setChartContainer}>
             <section className="controls">
               <div className="buttonRow">
                 <button onClick={() => zoom(0.75)}>Zoom In</button>
@@ -294,19 +283,17 @@ function App() {
                 </button>
                 <button
                   onClick={() => {
-                    if (!selection) return
-                    const start = Math.min(selection.start, selection.end)
-                    const end = Math.max(selection.start, selection.end)
-                    if (end > start) {
-                      setViewStart(start)
-                      setViewEnd(end)
+                    if (!selectedRangeBounds) return
+                    if (selectedRangeBounds.end > selectedRangeBounds.start) {
+                      setViewStart(selectedRangeBounds.start)
+                      setViewEnd(selectedRangeBounds.end)
                     }
                   }}
                   disabled={!selection}
                 >
                   Zoom To Selection
                 </button>
-                <button onClick={() => setSelection(null)} disabled={!selection}>
+                <button onClick={clearSelectionState} disabled={!selection}>
                   Clear Selection
                 </button>
               </div>
@@ -318,8 +305,8 @@ function App() {
                   min={0}
                   max={Math.max(0, points.length - 1 - viewSize)}
                   value={Math.min(viewStart, Math.max(0, points.length - 1 - viewSize))}
-                  onChange={(e) => {
-                    const nextStart = Number(e.target.value)
+                  onChange={(event) => {
+                    const nextStart = Number(event.target.value)
                     setViewStart(nextStart)
                     setViewEnd(nextStart + viewSize)
                   }}
@@ -365,7 +352,7 @@ function App() {
                   <div className="labelingRow">
                     <input
                       value={rangeLabelInput}
-                      onChange={(e) => setRangeLabelInput(e.target.value)}
+                      onChange={(event) => setRangeLabelInput(event.target.value)}
                       placeholder="Label name (e.g. run, swing, walk)"
                     />
                     <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
@@ -428,6 +415,7 @@ function App() {
                 setSelectionAnchor={setSelectionAnchor}
                 setSelection={setSelection}
                 setIsScrubbing={setIsScrubbing}
+                clearSelectionState={clearSelectionState}
                 setPlaying={setPlaying}
                 setPlaybackIndex={setPlaybackIndex}
                 zoom={zoom}

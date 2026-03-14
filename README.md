@@ -7,6 +7,7 @@ Live URL: `https://sakrist.github.io/imu-analysis-tool/`
 ## Features
 
 - Load CSV with acceleration, gyroscope, and gravity channels
+- Optionally load audio (`.m4a`, `.wav`, `.mp3`, `.caff`/`.caf`) with playback controls
 - Synchronized charts with pan, zoom, selection, and playhead scrubbing
 - Manual range labeling and labels CSV import/export
 - Playback from selected or visible range
@@ -53,10 +54,11 @@ npm run lint
 ## Basic Use
 
 1. Load a CSV file.
-2. Pan/zoom charts and drag to select a range.
-3. Add a label for the selected range.
-4. Export labels CSV when done.
-5. Use playback controls for chart + 3D replay.
+2. Optional: load an audio file recorded with the same session.
+3. Pan/zoom charts and drag to select a range.
+4. Add a label for the selected range.
+5. Export labels CSV when done.
+6. Use playback controls for chart + 3D replay (audio plays/pauses with playback).
 
 ## Labels CSV Schema
 

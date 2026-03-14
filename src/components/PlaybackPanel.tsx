@@ -1,17 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { getPlaybackStartIndex, type PlaybackWindow, type Selection } from '../lib/playback'
 import { clamp, fmt } from '../lib/sensor'
 import type { Sample } from '../lib/sensor'
-
-type Selection = { start: number; end: number } | null
-
-type PlaybackWindow = { start: number; end: number } | null
 
 type PlaybackPanelProps = {
   selection: Selection
   playbackWindow: PlaybackWindow
   playbackSamples: Sample[]
+  audioSrc: string | null
+  audioName: string | null
   playbackSource: 'view' | 'selection'
   setPlaybackSource: (value: 'view' | 'selection') => void
   playbackIndex: number
@@ -83,6 +82,8 @@ export function PlaybackPanel({
   selection,
   playbackWindow,
   playbackSamples,
+  audioSrc,
+  audioName,
   playbackSource,
   setPlaybackSource,
   playbackIndex,
@@ -94,6 +95,8 @@ export function PlaybackPanel({
   trajectory,
 }: PlaybackPanelProps) {
   const motionViewRef = useRef<HTMLDivElement | null>(null)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const wasPlayingRef = useRef(false)
   const orbitControlsRef = useRef<OrbitControls | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const gridRef = useRef<THREE.GridHelper | null>(null)
@@ -108,7 +111,7 @@ export function PlaybackPanel({
   const followOffsetRef = useRef(FOLLOW_OFFSET.clone())
   const rotatedTrajectory = useMemo(() => {
     if (!trajectory.length) return []
-    return trajectory;
+    return trajectory
     // const rotation = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2)
     // return trajectory.map((point) => point.clone().applyQuaternion(rotation))
   }, [trajectory])
@@ -321,8 +324,57 @@ export function PlaybackPanel({
     }
   }, [autoFollowEnabled, playbackIndex, playbackWindow, rotatedTrajectory])
 
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !audioSrc) return
+
+    if (!playing) {
+      audio.pause()
+      wasPlayingRef.current = false
+      return
+    }
+
+    if (wasPlayingRef.current) return
+
+    const localIndex =
+      playbackWindow && playbackSamples.length
+        ? clamp(playbackIndex - playbackWindow.start, 0, playbackSamples.length - 1)
+        : 0
+    const startTimeSec = playbackSamples[localIndex]?.t ?? 0
+
+    // Seek once when playback starts so audio matches current CSV/playback window position.
+    // While playing, do not continuously seek to avoid jitter.
+    const playFromCurrentPosition = async () => {
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        audio.currentTime = clamp(startTimeSec, 0, audio.duration)
+      } else {
+        audio.currentTime = Math.max(0, startTimeSec)
+      }
+      try {
+        await audio.play()
+        wasPlayingRef.current = true
+      } catch {
+        wasPlayingRef.current = false
+        setPlaying(false)
+      }
+    }
+
+    if (audio.readyState < 1) {
+      const onLoadedMetadata = () => {
+        audio.removeEventListener('loadedmetadata', onLoadedMetadata)
+        void playFromCurrentPosition()
+      }
+      audio.addEventListener('loadedmetadata', onLoadedMetadata)
+      return () => audio.removeEventListener('loadedmetadata', onLoadedMetadata)
+    }
+
+    void playFromCurrentPosition()
+  }, [audioSrc, playbackIndex, playbackSamples, playbackWindow, playing, setPlaying])
+
   return (
     <section className="playbackCard">
+      {audioSrc && <audio ref={audioRef} src={audioSrc} preload="auto" hidden onEnded={() => setPlaying(false)} />}
+
       <div className="cardHeader">
         <h2>Motion Playback (Three.js Trail)</h2>
         <div className="buttonRow">
@@ -352,14 +404,7 @@ export function PlaybackPanel({
                 setPlaying(false)
                 return
               }
-              if (playbackIndex >= playbackWindow.end) {
-                setPlaybackIndex(playbackWindow.start)
-                setPlaying(true)
-                return
-              }
-              if (playbackIndex < playbackWindow.start || playbackIndex > playbackWindow.end) {
-                setPlaybackIndex(playbackWindow.start)
-              }
+              setPlaybackIndex(getPlaybackStartIndex(playbackIndex, playbackWindow))
               setPlaying(true)
             }}
           >
@@ -423,6 +468,9 @@ export function PlaybackPanel({
         </span>
         <span>
           Labels: <b>{showCoordinateLabels ? 'Visible' : 'Hidden'}</b>
+        </span>
+        <span>
+          Audio: <b>{audioSrc ? audioName ?? 'Loaded' : 'Not loaded'}</b>
         </span>
       </div>
 

@@ -162,3 +162,29 @@ export function parseLabeledRangesCsv(text: string, points: Sample[]) {
 
   return sortLabeledRanges(imported)
 }
+
+function escapeCsvValue(value: string | number) {
+  const text = String(value)
+  if (!/[",\n]/.test(text)) return text
+  return `"${text.replace(/"/g, '""')}"`
+}
+
+export function serializeLabeledRangesCsv(ranges: LabeledRange[]) {
+  const header = ['label', 'startIndex', 'endIndex', 'startTimeSec', 'endTimeSec', 'durationSec', 'sampleCount']
+
+  const rows = sortLabeledRanges(ranges).map((range) =>
+    [
+      range.label,
+      range.startIndex,
+      range.endIndex,
+      range.startTimeSec.toFixed(6),
+      range.endTimeSec.toFixed(6),
+      range.durationSec.toFixed(6),
+      range.sampleCount,
+    ]
+      .map(escapeCsvValue)
+      .join(','),
+  )
+
+  return [header.join(','), ...rows].join('\n')
+}

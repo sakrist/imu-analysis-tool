@@ -1,10 +1,9 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { rangeColors } from '../lib/labels'
+import type { Selection } from '../lib/playback'
 import { COLORS, clamp, sampleVisible, toPath } from '../lib/sensor'
 import type { AxisKey, Sample } from '../lib/sensor'
 import type { LabeledRange } from '../lib/labels'
-
-type Selection = { start: number; end: number } | null
 
 const PLOT_LEFT = 56
 const PLOT_RIGHT = 10
@@ -47,6 +46,7 @@ type SensorChartCardProps = {
   setPlaybackIndex: (value: number) => void
   zoom: (factor: number, anchorRatio: number) => void
   pan: (deltaSamples: number) => void
+  clearSelectionState: () => void
 }
 
 export function SensorChartCard({
@@ -73,6 +73,7 @@ export function SensorChartCard({
   setPlaybackIndex,
   zoom,
   pan,
+  clearSelectionState,
 }: SensorChartCardProps) {
   const [collapsed, setCollapsed] = useState(false)
 
@@ -110,6 +111,21 @@ export function SensorChartCard({
     ? []
     : motionRanges.filter((range) => range.endIndex >= viewStart && range.startIndex <= viewEnd)
 
+  const svgRef = useRef<SVGSVGElement | null>(null)
+
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    // Handler to match React's onWheel logic
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault()
+    }
+    svg.addEventListener('wheel', handleWheel, { passive: false })
+    return () => {
+      svg.removeEventListener('wheel', handleWheel)
+    }
+  }, [])
+
   return (
     <section className="chartCard">
       <div className="cardHeader">
@@ -141,24 +157,36 @@ export function SensorChartCard({
 
       {!collapsed && (
         <svg
+          ref={svgRef}
           className="chart"
           width={chartWidth}
           height={SVG_HEIGHT}
           onWheel={(e) => {
+            // All logic as before, but e.preventDefault() is guaranteed by native listener
             const bounds = e.currentTarget.getBoundingClientRect()
             const ratio = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
 
+            // Option (Alt) + wheel scrolls (pans) the graph horizontally
+            if (e.altKey) {
+              if (Math.abs(e.deltaY) < 4) return
+              pan(Math.round((e.deltaY / 100) * Math.max(4, viewSize * 0.05)))
+              return
+            }
+
             if (e.ctrlKey || e.metaKey) {
               if (Math.abs(e.deltaY) < 4) return
-              e.preventDefault()
               zoom(e.deltaY > 0 ? 1.12 : 0.88, ratio)
               return
             }
 
             const horizontalDelta = e.shiftKey ? e.deltaY : e.deltaX
             if (Math.abs(horizontalDelta) < 4) return
-            e.preventDefault()
             pan(Math.round((horizontalDelta / 100) * Math.max(4, viewSize * 0.05)))
+          }}
+          onDoubleClick={(e) => {
+            // Jump playback cursor to double-clicked position and clear selection state
+            updatePlaybackFromPointer(e.clientX, e.currentTarget)
+            clearSelectionState()
           }}
           onPointerDown={(e) => {
             e.preventDefault()
