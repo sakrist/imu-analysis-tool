@@ -78,8 +78,8 @@ function App() {
       setViewStart(selectedRangeBounds.start)
       setViewEnd(selectedRangeBounds.end)
     }
-    clearSelectionState();
-  }, [selectedRangeBounds])
+    clearSelectionState()
+  }, [clearSelectionState, selectedRangeBounds])
 
   const resetView = useCallback(() => {
     if (!points.length) return

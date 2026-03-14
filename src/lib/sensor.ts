@@ -1,6 +1,8 @@
 import * as THREE from 'three'
 
-export type AxisKey = 'ax' | 'ay' | 'az' | 'gx' | 'gy' | 'gz' | 'grx' | 'gry' | 'grz'
+export type RawAxisKey = 'ax' | 'ay' | 'az' | 'gx' | 'gy' | 'gz' | 'grx' | 'gry' | 'grz'
+export type DerivedAxisKey = 'a_mag' | 'g_mag'
+export type AxisKey = RawAxisKey | DerivedAxisKey
 
 export type Sample = {
   timestamp: number
@@ -20,6 +22,7 @@ export const CHART_GROUPS: Array<{ title: string; keys: AxisKey[]; unit: string;
   { title: 'Acceleration', keys: ['ax', 'ay', 'az'], unit: 'g', yDomain: [-16, 16] },
   { title: 'Gyroscope', keys: ['gx', 'gy', 'gz'], unit: 'rad/s' },
   { title: 'Gravity', keys: ['grx', 'gry', 'grz'], unit: 'g' },
+  { title: 'Accel + Gyro Magnitude', keys: ['a_mag', 'g_mag'], unit: 'g | rad/s' },
 ]
 
 export const COLORS: Record<AxisKey, string> = {
@@ -32,6 +35,8 @@ export const COLORS: Record<AxisKey, string> = {
   grx: '#a855f7',
   gry: '#ec4899',
   grz: '#ef4444',
+  a_mag: '#0f766e',
+  g_mag: '#7c3aed',
 }
 
 export function clamp(value: number, min: number, max: number) {
@@ -106,13 +111,19 @@ export function sampleVisible(points: Sample[], key: AxisKey, from: number, to: 
   const sampled: Array<{ i: number; v: number }> = []
 
   for (let i = from; i <= to; i += step) {
-    sampled.push({ i, v: points[i][key] })
+    sampled.push({ i, v: axisValue(points[i], key) })
   }
   if (sampled[sampled.length - 1]?.i !== to) {
-    sampled.push({ i: to, v: points[to][key] })
+    sampled.push({ i: to, v: axisValue(points[to], key) })
   }
 
   return sampled
+}
+
+function axisValue(point: Sample, key: AxisKey) {
+  if (key === 'a_mag') return Math.hypot(point.ax, point.ay, point.az)
+  if (key === 'g_mag') return Math.hypot(point.gx, point.gy, point.gz)
+  return point[key as RawAxisKey]
 }
 
 export function toPath(

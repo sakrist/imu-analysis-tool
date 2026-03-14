@@ -112,6 +112,8 @@ export function SensorChartCard({
     : motionRanges.filter((range) => range.endIndex >= viewStart && range.startIndex <= viewEnd)
 
   const svgRef = useRef<SVGSVGElement | null>(null)
+  const isHoveredRef = useRef(false)
+  const hoverRatioRef = useRef(0.5)
 
   useEffect(() => {
     const svg = svgRef.current
@@ -128,6 +130,27 @@ export function SensorChartCard({
     }
   }, [])
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!isHoveredRef.current || collapsed) return
+      if (!event.metaKey || event.ctrlKey || event.altKey) return
+
+      const isZoomInKey =
+        event.key === '+' || event.key === '=' || event.code === 'Equal' || event.code === 'NumpadAdd'
+      const isZoomOutKey =
+        event.key === '-' || event.key === '_' || event.code === 'Minus' || event.code === 'NumpadSubtract'
+
+      if (!isZoomInKey && !isZoomOutKey) return
+
+      event.preventDefault()
+      const anchorRatio = clamp(hoverRatioRef.current, 0, 1)
+      zoom(isZoomInKey ? 0.88 : 1.12, anchorRatio)
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [collapsed, zoom])
+
   return (
     <section className="chartCard">
       <div className="cardHeader">
@@ -139,6 +162,7 @@ export function SensorChartCard({
               setIsSelecting(false)
               setIsScrubbing(false)
               setSelectionAnchor(null)
+              isHoveredRef.current = false
             }}
             aria-expanded={!collapsed}
             aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${title}`}
@@ -166,6 +190,7 @@ export function SensorChartCard({
           onWheel={(e) => {
             const bounds = e.currentTarget.getBoundingClientRect()
             const ratio = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
+            hoverRatioRef.current = ratio
 
             // Ctrl/Cmd + wheel zooms chart.
             if (e.ctrlKey || e.metaKey) {
@@ -205,6 +230,9 @@ export function SensorChartCard({
             e.currentTarget.setPointerCapture(e.pointerId)
           }}
           onPointerMove={(e) => {
+            const bounds = e.currentTarget.getBoundingClientRect()
+            hoverRatioRef.current = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
+
             if (isScrubbing) {
               e.preventDefault()
               updatePlaybackFromPointer(e.clientX, e.currentTarget)
@@ -225,6 +253,14 @@ export function SensorChartCard({
             if (!isSelecting) return
             setIsSelecting(false)
             e.currentTarget.releasePointerCapture(e.pointerId)
+          }}
+          onPointerEnter={(e) => {
+            isHoveredRef.current = true
+            const bounds = e.currentTarget.getBoundingClientRect()
+            hoverRatioRef.current = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
+          }}
+          onPointerLeave={() => {
+            isHoveredRef.current = false
           }}
         >
           <rect x={PLOT_LEFT} y={PLOT_TOP} width={plotWidth} height={PLOT_HEIGHT} className="chartBg" />
