@@ -118,7 +118,9 @@ export function SensorChartCard({
     if (!svg) return
     // Handler to match React's onWheel logic
     const handleWheel = (e: WheelEvent) => {
-      e.preventDefault()
+      if (e.altKey || e.ctrlKey || e.metaKey) {
+        e.preventDefault()
+      }
     }
     svg.addEventListener('wheel', handleWheel, { passive: false })
     return () => {
@@ -162,26 +164,21 @@ export function SensorChartCard({
           width={chartWidth}
           height={SVG_HEIGHT}
           onWheel={(e) => {
-            // All logic as before, but e.preventDefault() is guaranteed by native listener
             const bounds = e.currentTarget.getBoundingClientRect()
             const ratio = clamp((e.clientX - bounds.left - PLOT_LEFT) / plotWidth, 0, 1)
 
-            // Option (Alt) + wheel scrolls (pans) the graph horizontally
-            if (e.altKey) {
-              if (Math.abs(e.deltaY) < 4) return
-              pan(Math.round((e.deltaY / 100) * Math.max(4, viewSize * 0.05)))
-              return
-            }
-
+            // Ctrl/Cmd + wheel zooms chart.
             if (e.ctrlKey || e.metaKey) {
               if (Math.abs(e.deltaY) < 4) return
               zoom(e.deltaY > 0 ? 1.12 : 0.88, ratio)
               return
             }
 
-            const horizontalDelta = e.shiftKey ? e.deltaY : e.deltaX
-            if (Math.abs(horizontalDelta) < 4) return
-            pan(Math.round((horizontalDelta / 100) * Math.max(4, viewSize * 0.05)))
+            // Alt + wheel pans chart. Plain wheel should bubble to page scroll.
+            if (!e.altKey) return
+            const panDelta = e.deltaY
+            if (Math.abs(panDelta) < 4) return
+            pan(Math.round((panDelta / 100) * Math.max(4, viewSize * 0.05)))
           }}
           onDoubleClick={(e) => {
             // Jump playback cursor to double-clicked position and clear selection state
@@ -189,6 +186,16 @@ export function SensorChartCard({
             clearSelectionState()
           }}
           onPointerDown={(e) => {
+            // If shift is held, start scrub mode directly on pointer down
+            if (e.shiftKey) {
+              e.preventDefault()
+              e.stopPropagation()
+              setPlaying(false)
+              setIsScrubbing(true)
+              updatePlaybackFromPointer(e.clientX, e.currentTarget)
+              e.currentTarget.setPointerCapture(e.pointerId)
+              return
+            }
             e.preventDefault()
             const index = chartPointerToIndex(e.clientX, e.currentTarget)
             if (index === null) return
