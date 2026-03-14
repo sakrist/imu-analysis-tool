@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { getPlaybackStartIndex, isInteractiveKeyboardTarget } from '../lib/playback'
 import type { PlaybackWindow } from '../lib/playback'
 
@@ -9,6 +9,8 @@ type Params = {
   setPlaybackIndex: (value: number) => void
   setPlaying: (value: boolean) => void
   clearSelection: () => void
+  zoomToSelection: () => void
+  resetView: () => void
 }
 
 export function useGlobalHotkeys({
@@ -18,11 +20,25 @@ export function useGlobalHotkeys({
   setPlaybackIndex,
   setPlaying,
   clearSelection,
+  zoomToSelection,
+  resetView,
 }: Params) {
+  const lastEscAtRef = useRef(0)
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        const now = performance.now()
+        const isDoubleEsc = now - lastEscAtRef.current < 450
+        lastEscAtRef.current = now
         clearSelection()
+        if (isDoubleEsc) resetView()
+        return
+      }
+
+      if (event.metaKey && event.key === 'Enter' && !isInteractiveKeyboardTarget(event.target)) {
+        event.preventDefault()
+        zoomToSelection()
         return
       }
 
@@ -42,5 +58,5 @@ export function useGlobalHotkeys({
 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [clearSelection, playbackIndex, playbackWindow, playing, setPlaybackIndex, setPlaying])
+  }, [clearSelection, playbackIndex, playbackWindow, playing, resetView, setPlaybackIndex, setPlaying, zoomToSelection])
 }

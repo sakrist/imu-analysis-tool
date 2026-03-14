@@ -30,6 +30,7 @@ function App() {
   const [rangeLabelInput, setRangeLabelInput] = useState('')
   const [sourceFileName, setSourceFileName] = useState('motion')
   const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
+  const [showHotkeysPopover, setShowHotkeysPopover] = useState(false)
   const [chartContainer, setChartContainer] = useState<HTMLDivElement | null>(null)
   const chartWidth = useChartWidth(chartContainer)
   const { fileRef: audioTrack, clear: clearAudioTrack, setFromFile: setAudioFromFile } = useObjectUrlFile()
@@ -71,6 +72,20 @@ function App() {
     setIsScrubbing(false)
   }, [])
 
+  const zoomToSelection = useCallback(() => {
+    if (!selectedRangeBounds) return
+    if (selectedRangeBounds.end > selectedRangeBounds.start) {
+      setViewStart(selectedRangeBounds.start)
+      setViewEnd(selectedRangeBounds.end)
+    }
+  }, [selectedRangeBounds])
+
+  const resetView = useCallback(() => {
+    if (!points.length) return
+    setViewStart(0)
+    setViewEnd(points.length - 1)
+  }, [points.length])
+
   useTimeBasedPlayback({
     points,
     playbackWindow,
@@ -87,6 +102,8 @@ function App() {
     setPlaybackIndex,
     setPlaying,
     clearSelection: clearSelectionState,
+    zoomToSelection,
+    resetView,
   })
 
   const zoom = useCallback(
@@ -237,6 +254,39 @@ function App() {
           <button onClick={clearAudioTrack} disabled={!audioTrack}>
             Clear Audio
           </button>
+          <div className="hotkeysPopoverWrap">
+            <button
+              className="iconButton"
+              aria-label="Keyboard shortcuts"
+              aria-expanded={showHotkeysPopover}
+              onClick={() => setShowHotkeysPopover((prev) => !prev)}
+            >
+              i
+            </button>
+            {showHotkeysPopover && (
+              <div className="hotkeysPopover" role="dialog" aria-label="Keyboard shortcuts">
+                <h3>Hotkeys</h3>
+                <p>
+                  <kbd>Space</kbd>: Play/Pause
+                </p>
+                <p>
+                  <kbd>Esc</kbd>: Clear selection
+                </p>
+                <p>
+                  <kbd>Esc</kbd> twice: Reset view
+                </p>
+                <p>
+                  <kbd>Cmd</kbd> + <kbd>Enter</kbd>: Zoom to selection
+                </p>
+                <p>
+                  <kbd>Ctrl/Cmd</kbd> + wheel: Zoom graph
+                </p>
+                <p>
+                  <kbd>Alt</kbd> + wheel: Pan graph
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
@@ -273,22 +323,11 @@ function App() {
               <div className="buttonRow">
                 <button onClick={() => zoom(0.75)}>Zoom In</button>
                 <button onClick={() => zoom(1.35)}>Zoom Out</button>
-                <button
-                  onClick={() => {
-                    setViewStart(0)
-                    setViewEnd(points.length - 1)
-                  }}
-                >
+                <button onClick={resetView}>
                   Reset View
                 </button>
                 <button
-                  onClick={() => {
-                    if (!selectedRangeBounds) return
-                    if (selectedRangeBounds.end > selectedRangeBounds.start) {
-                      setViewStart(selectedRangeBounds.start)
-                      setViewEnd(selectedRangeBounds.end)
-                    }
-                  }}
+                  onClick={zoomToSelection}
                   disabled={!selection}
                 >
                   Zoom To Selection
