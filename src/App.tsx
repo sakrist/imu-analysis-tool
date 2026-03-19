@@ -28,6 +28,7 @@ function App() {
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource>('view')
   const [labeledRanges, setLabeledRanges] = useState<LabeledRange[]>([])
   const [rangeLabelInput, setRangeLabelInput] = useState('')
+  const [cursorSelectionRadiusInput, setCursorSelectionRadiusInput] = useState('50')
   const [sourceFileName, setSourceFileName] = useState('motion')
   const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
   const [showHotkeysPopover, setShowHotkeysPopover] = useState(false)
@@ -64,6 +65,11 @@ function App() {
 
   const selectedSampleCount = selectedRangeBounds ? selectedRangeBounds.end - selectedRangeBounds.start + 1 : 0
   const canAddLabeledRange = Boolean(points.length && selectedRangeBounds && rangeLabelInput.trim())
+  const parsedCursorSelectionRadius = Number(cursorSelectionRadiusInput)
+  const cursorSelectionRadius = Number.isFinite(parsedCursorSelectionRadius)
+    ? Math.max(0, Math.floor(parsedCursorSelectionRadius))
+    : null
+  const canSelectAroundCursor = points.length > 0 && cursorSelectionRadius !== null
 
   const clearSelectionState = useCallback(() => {
     setSelection(null)
@@ -157,6 +163,19 @@ function App() {
 
     setLabeledRanges((prev) => sortLabeledRanges([...prev, nextRange]))
   }, [points, rangeLabelInput, selectedRangeBounds])
+
+  const selectAroundCursor = useCallback(() => {
+    if (!points.length || cursorSelectionRadius === null) return
+
+    const maxIndex = points.length - 1
+    const center = clamp(playbackIndex, 0, maxIndex)
+    const start = clamp(center - cursorSelectionRadius, 0, maxIndex)
+    const end = clamp(center + cursorSelectionRadius, start, maxIndex)
+
+    setSelection({ start, end })
+    setSelectionAnchor(center)
+    setIsSelecting(false)
+  }, [cursorSelectionRadius, playbackIndex, points.length])
 
   const removeLabeledRange = useCallback((id: string) => {
     setLabeledRanges((prev) => prev.filter((range) => range.id !== id))
@@ -353,6 +372,21 @@ function App() {
                 />
               </label>
 
+              <div className="selectionToolsRow">
+                <span>Select from cursor:</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={cursorSelectionRadiusInput}
+                  onChange={(event) => setCursorSelectionRadiusInput(event.target.value)}
+                  aria-label="Samples left and right from cursor"
+                />
+                <button onClick={selectAroundCursor} disabled={!canSelectAroundCursor}>
+                  Select ±X Samples
+                </button>
+              </div>
+
               <div className="metaRow">
                 <span>
                   Samples: <b>{points.length.toLocaleString()}</b>
@@ -414,7 +448,7 @@ function App() {
                       ? `Selected ${selectedSampleCount.toLocaleString()} samples (${fmt(
                           points[selectedRangeBounds.start].t,
                         )}s to ${fmt(points[selectedRangeBounds.end].t)}s)`
-                      : 'Drag on any chart to select a range, then add a label.'}
+                      : 'Drag on any chart to select a range, drag the selected area to move it, or resize with edge handles.'}
                   </p>
                   {!!labeledRanges.length && (
                     <div className="rangeList">

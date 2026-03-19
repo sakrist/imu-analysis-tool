@@ -14,6 +14,8 @@ const SVG_HEIGHT = PLOT_TOP + PLOT_HEIGHT + PLOT_BOTTOM
 
 const AXIS_TICK_RATIOS = [0, 0.25, 0.5, 0.75, 1]
 
+type SelectionDragMode = 'create' | 'move' | 'resize-start' | 'resize-end'
+
 function formatScaleValue(value: number) {
   const abs = Math.abs(value)
   if (abs >= 100) return value.toFixed(1)
@@ -76,6 +78,7 @@ export function SensorChartCard({
   clearSelectionState,
 }: SensorChartCardProps) {
   const [collapsed, setCollapsed] = useState(false)
+  const [selectionDragMode, setSelectionDragMode] = useState<SelectionDragMode | null>(null)
 
   const plotWidth = Math.max(140, chartWidth - PLOT_LEFT - PLOT_RIGHT)
   const xRange = Math.max(1, viewEnd - viewStart)
@@ -114,6 +117,67 @@ export function SensorChartCard({
   const svgRef = useRef<SVGSVGElement | null>(null)
   const isHoveredRef = useRef(false)
   const hoverRatioRef = useRef(0.5)
+  const selectionDragModeRef = useRef<SelectionDragMode | null>(null)
+  const selectionDragStartRef = useRef<{ pointerIndex: number; start: number; end: number } | null>(null)
+
+  const selectionBounds = selection
+    ? {
+        start: Math.min(selection.start, selection.end),
+        end: Math.max(selection.start, selection.end),
+      }
+    : null
+  const selectionX = selectionBounds ? PLOT_LEFT + indexToPlotX(selectionBounds.start) : 0
+  const selectionWidth = selectionBounds
+    ? Math.max(sampleWidthPx, (Math.abs(selectionBounds.end - selectionBounds.start) / xRange) * plotWidth)
+    : 0
+  const selectionHandleWidth = Math.min(10, Math.max(6, sampleWidthPx * 1.25))
+  const leftSelectionHandleX = selectionX - selectionHandleWidth / 2
+  const rightSelectionHandleX = selectionX + selectionWidth - selectionHandleWidth / 2
+
+  const beginSelectionDrag = (
+    mode: SelectionDragMode,
+    pointerIndex: number,
+    pointerId: number,
+    svgTarget: SVGSVGElement | null,
+  ) => {
+    if (!points.length) return
+
+    if (mode === 'create') {
+      selectionDragModeRef.current = mode
+      setSelectionDragMode(mode)
+      selectionDragStartRef.current = {
+        pointerIndex,
+        start: pointerIndex,
+        end: pointerIndex,
+      }
+      setSelectionAnchor(pointerIndex)
+      setSelection({ start: pointerIndex, end: pointerIndex })
+      setIsSelecting(true)
+      svgTarget?.setPointerCapture(pointerId)
+      return
+    }
+
+    if (!selectionBounds) return
+
+    selectionDragModeRef.current = mode
+    setSelectionDragMode(mode)
+    selectionDragStartRef.current = {
+      pointerIndex,
+      start: selectionBounds.start,
+      end: selectionBounds.end,
+    }
+    setSelectionAnchor(null)
+    setIsSelecting(true)
+    svgTarget?.setPointerCapture(pointerId)
+  }
+
+  const endSelectionDrag = () => {
+    selectionDragModeRef.current = null
+    selectionDragStartRef.current = null
+    setSelectionDragMode(null)
+    setSelectionAnchor(null)
+    setIsSelecting(false)
+  }
 
   useEffect(() => {
     const svg = svgRef.current
@@ -162,6 +226,9 @@ export function SensorChartCard({
               setIsSelecting(false)
               setIsScrubbing(false)
               setSelectionAnchor(null)
+              selectionDragModeRef.current = null
+              selectionDragStartRef.current = null
+              setSelectionDragMode(null)
               isHoveredRef.current = false
             }}
             aria-expanded={!collapsed}
@@ -224,10 +291,7 @@ export function SensorChartCard({
             e.preventDefault()
             const index = chartPointerToIndex(e.clientX, e.currentTarget)
             if (index === null) return
-            setSelectionAnchor(index)
-            setSelection({ start: index, end: index })
-            setIsSelecting(true)
-            e.currentTarget.setPointerCapture(e.pointerId)
+            beginSelectionDrag('create', index, e.pointerId, e.currentTarget)
           }}
           onPointerMove={(e) => {
             const bounds = e.currentTarget.getBoundingClientRect()
@@ -238,21 +302,77 @@ export function SensorChartCard({
               updatePlaybackFromPointer(e.clientX, e.currentTarget)
               return
             }
-            if (!isSelecting || selectionAnchor === null) return
+            if (!isSelecting) return
             e.preventDefault()
             const index = chartPointerToIndex(e.clientX, e.currentTarget)
             if (index === null) return
-            setSelection({ start: selectionAnchor, end: index })
+            const mode = selectionDragModeRef.current
+            if (!mode) return
+
+            if (mode === 'create') {
+              const anchor = selectionAnchor ?? selectionDragStartRef.current?.pointerIndex
+              if (anchor === undefined || anchor === null) return
+              setSelection({ start: anchor, end: index })
+              return
+            }
+
+            const dragStart = selectionDragStartRef.current
+            if (!dragStart) return
+
+            if (mode === 'resize-start') {
+              setSelection({ start: index, end: dragStart.end })
+              return
+            }
+
+            if (mode === 'resize-end') {
+              setSelection({ start: dragStart.start, end: index })
+              return
+            }
+
+            const selectionSpan = dragStart.end - dragStart.start
+            const delta = index - dragStart.pointerIndex
+            let nextStart = dragStart.start + delta
+            let nextEnd = nextStart + selectionSpan
+            const maxIndex = points.length - 1
+
+            if (nextStart < 0) {
+              nextEnd -= nextStart
+              nextStart = 0
+            }
+            if (nextEnd > maxIndex) {
+              const overflow = nextEnd - maxIndex
+              nextStart -= overflow
+              nextEnd = maxIndex
+            }
+
+            nextStart = clamp(nextStart, 0, maxIndex)
+            nextEnd = clamp(nextEnd, nextStart, maxIndex)
+            setSelection({ start: nextStart, end: nextEnd })
           }}
           onPointerUp={(e) => {
             if (isScrubbing) {
               setIsScrubbing(false)
-              e.currentTarget.releasePointerCapture(e.pointerId)
+              if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId)
+              }
               return
             }
             if (!isSelecting) return
-            setIsSelecting(false)
-            e.currentTarget.releasePointerCapture(e.pointerId)
+            endSelectionDrag()
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId)
+            }
+          }}
+          onPointerCancel={(e) => {
+            if (isScrubbing) {
+              setIsScrubbing(false)
+            }
+            if (isSelecting) {
+              endSelectionDrag()
+            }
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId)
+            }
           }}
           onPointerEnter={(e) => {
             isHoveredRef.current = true
@@ -358,14 +478,54 @@ export function SensorChartCard({
             />
           ))}
 
-          {selection && (
-            <rect
-              className="selection"
-              x={PLOT_LEFT + indexToPlotX(Math.min(selection.start, selection.end))}
-              y={PLOT_TOP}
-              width={Math.max(sampleWidthPx, (Math.abs(selection.end - selection.start) / xRange) * plotWidth)}
-              height={PLOT_HEIGHT}
-            />
+          {selectionBounds && (
+            <g>
+              <rect
+                className={`selectionFill${selectionDragMode === 'move' ? ' isDragging' : ''}`}
+                x={selectionX}
+                y={PLOT_TOP}
+                width={selectionWidth}
+                height={PLOT_HEIGHT}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const svgTarget = e.currentTarget.ownerSVGElement
+                  const index = chartPointerToIndex(e.clientX, svgTarget)
+                  if (index === null) return
+                  beginSelectionDrag('move', index, e.pointerId, svgTarget)
+                }}
+              />
+              <rect
+                className="selectionHandle"
+                x={leftSelectionHandleX}
+                y={PLOT_TOP}
+                width={selectionHandleWidth}
+                height={PLOT_HEIGHT}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const svgTarget = e.currentTarget.ownerSVGElement
+                  const index = chartPointerToIndex(e.clientX, svgTarget)
+                  if (index === null) return
+                  beginSelectionDrag('resize-start', index, e.pointerId, svgTarget)
+                }}
+              />
+              <rect
+                className="selectionHandle"
+                x={rightSelectionHandleX}
+                y={PLOT_TOP}
+                width={selectionHandleWidth}
+                height={PLOT_HEIGHT}
+                onPointerDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  const svgTarget = e.currentTarget.ownerSVGElement
+                  const index = chartPointerToIndex(e.clientX, svgTarget)
+                  if (index === null) return
+                  beginSelectionDrag('resize-end', index, e.pointerId, svgTarget)
+                }}
+              />
+            </g>
           )}
 
           <line x1={playheadX} y1={PLOT_TOP} x2={playheadX} y2={PLOT_TOP + PLOT_HEIGHT} className="playheadLine" />

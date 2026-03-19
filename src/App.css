@@ -271,6 +271,25 @@ button:disabled {
   width: 100%;
 }
 
+.selectionToolsRow {
+  margin-top: 0.7rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.selectionToolsRow input {
+  width: 100px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.38rem 0.65rem;
+  color: var(--ink);
+  background: #fff;
+}
+
 .metaRow {
   display: flex;
   flex-wrap: wrap;
@@ -388,8 +407,20 @@ button:disabled {
   letter-spacing: 0.02em;
 }
 
-.selection {
+.selectionFill {
   fill: rgba(231, 111, 81, 0.18);
+  cursor: grab;
+}
+
+.selectionFill.isDragging {
+  cursor: grabbing;
+}
+
+.selectionHandle {
+  fill: rgba(231, 111, 81, 0.7);
+  stroke: rgba(231, 111, 81, 0.95);
+  stroke-width: 1;
+  cursor: ew-resize;
 }
 
 .motionRangeGroup {
