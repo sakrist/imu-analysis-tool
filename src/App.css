@@ -219,6 +219,89 @@ kbd {
   font-size: 0.86rem;
 }
 
+.modelStatusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.modelMeta {
+  color: var(--muted);
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  padding: 0.18rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  background: #fff;
+}
+
+.statusBadge.idle {
+  color: #6d665d;
+}
+
+.statusBadge.loading {
+  color: #8a4b16;
+  border-color: #f0c7a5;
+  background: #fff3e7;
+}
+
+.statusBadge.ready {
+  color: #166534;
+  border-color: #b9e0c7;
+  background: #edf9f0;
+}
+
+.statusBadge.error {
+  color: #9f2f15;
+  border-color: #f1b6a7;
+  background: #ffe9e3;
+}
+
+.labeledInput {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.labeledInput span {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.labelingRow .labeledInput input {
+  min-width: 96px;
+  flex: 0 0 96px;
+}
+
+.checkboxRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.42rem 0.78rem;
+  background: #fff;
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
+.checkboxRow input {
+  min-width: 0;
+  width: auto;
+  flex: 0 0 auto;
+  accent-color: var(--accent);
+}
+
 .rangeList {
   margin-top: 0.6rem;
   display: flex;

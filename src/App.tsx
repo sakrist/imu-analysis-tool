@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ChangeEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import { PlaybackPanel } from './components/PlaybackPanel'
 import { SensorChartCard } from './components/SensorChartCard'
 import { useChartWidth } from './hooks/useChartWidth'
@@ -9,6 +9,7 @@ import { parseLabeledRangesCsv, serializeLabeledRangesCsv, sortLabeledRanges, ty
 import { type PlaybackSource, normalizeSelection, resolvePlaybackWindow, type Selection } from './lib/playback'
 import { CHART_GROUPS, clamp, computeTrajectory, fmt, parseCsv } from './lib/sensor'
 import type { Sample } from './lib/sensor'
+import { buildPredictedStrikeRanges, inferStrikeWindows, type StrikeInferenceResult } from './lib/strikeModel'
 import './App.css'
 
 const AUDIO_FILE_ACCEPT =
@@ -32,6 +33,11 @@ function App() {
   const [sourceFileName, setSourceFileName] = useState('motion')
   const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
   const [showHotkeysPopover, setShowHotkeysPopover] = useState(false)
+  const [strikeInference, setStrikeInference] = useState<StrikeInferenceResult | null>(null)
+  const [modelStatus, setModelStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [modelError, setModelError] = useState('')
+  const [predictionThresholdInput, setPredictionThresholdInput] = useState('0.50')
+  const [showModelPredictions, setShowModelPredictions] = useState(true)
   const [chartContainer, setChartContainer] = useState<HTMLDivElement | null>(null)
   const chartWidth = useChartWidth(chartContainer)
   const { fileRef: audioTrack, clear: clearAudioTrack, setFromFile: setAudioFromFile } = useObjectUrlFile()
@@ -56,6 +62,31 @@ function App() {
   }, [playbackWindow, points])
 
   const selectedRangeBounds = useMemo(() => normalizeSelection(selection), [selection])
+  const parsedPredictionThreshold = Number(predictionThresholdInput)
+  const predictionThreshold = Number.isFinite(parsedPredictionThreshold)
+    ? clamp(parsedPredictionThreshold, 0, 1)
+    : strikeInference?.defaultThreshold ?? 0.5
+
+  const predictedRanges = useMemo(
+    () =>
+      strikeInference
+        ? buildPredictedStrikeRanges(points, strikeInference.windowPredictions, predictionThreshold, strikeInference.stride)
+        : [],
+    [points, predictionThreshold, strikeInference],
+  )
+
+  const positivePredictionCount = useMemo(
+    () =>
+      strikeInference
+        ? strikeInference.windowPredictions.filter((prediction) => prediction.probability >= predictionThreshold).length
+        : 0,
+    [predictionThreshold, strikeInference],
+  )
+
+  const chartRanges = useMemo(
+    () => (showModelPredictions ? sortLabeledRanges([...labeledRanges, ...predictedRanges]) : labeledRanges),
+    [labeledRanges, predictedRanges, showModelPredictions],
+  )
 
   const currentTrajectoryPoint = useMemo(() => {
     if (!playbackWindow || !trajectory.length) return null
@@ -112,6 +143,41 @@ function App() {
     zoomToSelection,
     resetView,
   })
+
+  useEffect(() => {
+    let cancelled = false
+
+    if (!points.length) {
+      setStrikeInference(null)
+      setModelStatus('idle')
+      setModelError('')
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setStrikeInference(null)
+    setModelStatus('loading')
+    setModelError('')
+
+    inferStrikeWindows(points)
+      .then((result) => {
+        if (cancelled) return
+        setStrikeInference(result)
+        setPredictionThresholdInput(result.defaultThreshold.toFixed(2))
+        setModelStatus('ready')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setStrikeInference(null)
+        setModelStatus('error')
+        setModelError(err instanceof Error ? err.message : 'Failed to run strike model')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [points])
 
   const zoom = useCallback(
     (factor: number, anchorRatio = 0.5) => {
@@ -228,6 +294,9 @@ function App() {
         setError('No numeric rows found in CSV.')
         setPoints([])
         setLabeledRanges([])
+        setStrikeInference(null)
+        setModelStatus('idle')
+        setModelError('')
         return
       }
 
@@ -239,11 +308,17 @@ function App() {
       setPlaying(false)
       setPlaybackSource('view')
       setLabeledRanges([])
+      setStrikeInference(null)
+      setModelStatus('loading')
+      setModelError('')
       setError('')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to parse CSV')
       setPoints([])
       setLabeledRanges([])
+      setStrikeInference(null)
+      setModelStatus('idle')
+      setModelError('')
     }
   }, [])
 
@@ -405,6 +480,79 @@ function App() {
                 <span>
                   Labeled Ranges: <b>{labeledRanges.length}</b>
                 </span>
+                <span>
+                  Predicted Strikes: <b>{predictedRanges.length}</b>
+                </span>
+              </div>
+            </section>
+
+            <section className="labelingCard">
+              <div className="labelingHeader">
+                <span>Strike Model</span>
+                <span>{modelStatus === 'ready' ? `${predictedRanges.length.toLocaleString()} ranges` : modelStatus}</span>
+              </div>
+              <div className="labelingBody">
+                <div className="modelStatusRow">
+                  <span className={`statusBadge ${modelStatus}`}>
+                    {modelStatus === 'idle' && 'Waiting for data'}
+                    {modelStatus === 'loading' && 'Running inference'}
+                    {modelStatus === 'ready' && 'Model ready'}
+                    {modelStatus === 'error' && 'Model error'}
+                  </span>
+                  {strikeInference && (
+                    <span className="modelMeta">
+                      {strikeInference.modelVersion} · {strikeInference.windowSize}-sample windows · stride{' '}
+                      {strikeInference.stride}
+                    </span>
+                  )}
+                </div>
+
+                <div className="labelingRow">
+                  <label className="labeledInput">
+                    <span>Threshold</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={predictionThresholdInput}
+                      onChange={(event) => setPredictionThresholdInput(event.target.value)}
+                      disabled={modelStatus !== 'ready'}
+                    />
+                  </label>
+                  <label className="checkboxRow">
+                    <input
+                      type="checkbox"
+                      checked={showModelPredictions}
+                      onChange={(event) => setShowModelPredictions(event.target.checked)}
+                    />
+                    <span>Show predicted ranges on charts</span>
+                  </label>
+                </div>
+
+                <p className="labelingHint">
+                  {modelError
+                    ? modelError
+                    : strikeInference
+                      ? `Scanned ${strikeInference.windowPredictions.length.toLocaleString()} windows. ${positivePredictionCount.toLocaleString()} windows are above threshold ${predictionThreshold.toFixed(
+                          2,
+                        )}, merged into ${predictedRanges.length.toLocaleString()} predicted strike ranges.`
+                      : 'Load a sensor CSV to run the bundled strike detector.'}
+                </p>
+
+                {!!predictedRanges.length && (
+                  <div className="rangeList">
+                    {predictedRanges.map((range) => (
+                      <div key={range.id} className="rangeListItem">
+                        <span>
+                          <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
+                          {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples, max p=
+                          {range.maxProbability.toFixed(2)})
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -484,7 +632,7 @@ function App() {
                 isSelecting={isSelecting}
                 isScrubbing={isScrubbing}
                 playbackIndex={playbackIndex}
-                motionRanges={labeledRanges}
+                motionRanges={chartRanges}
                 setIsSelecting={setIsSelecting}
                 setSelectionAnchor={setSelectionAnchor}
                 setSelection={setSelection}

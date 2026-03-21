@@ -7,6 +7,7 @@ Live URL: `https://sakrist.github.io/imu-analysis-tool/`
 ## Features
 
 - Load CSV with acceleration, gyroscope, and gravity channels
+- Run the bundled strike CNN in-browser and overlay predicted strike ranges
 - Optionally load audio (`.m4a`, `.wav`, `.mp3`, `.caff`/`.caf`) with playback controls
 - Synchronized charts with pan, zoom, selection, and playhead scrubbing
 - Manual range labeling and labels CSV import/export
@@ -49,6 +50,23 @@ npm run dev
 npm run build
 npm run preview
 npm run lint
+```
+
+## Strike Model
+
+The app bundles a browser-friendly export of the `watch-strike-cnn` strike detector at [`public/models/strike-cnn-v1.json`](public/models/strike-cnn-v1.json).
+
+- Model input: `70` samples per window
+- Window stride: `8`
+- Feature order: `ax, ay, az, gx, gy, gz, grx, gry, grz, acc_mag, gyro_mag`
+- Threshold: configurable in the UI, default `0.50`
+
+The model runs automatically after you load a CSV. Predictions stay separate from manual labels and can be shown or hidden as chart overlays.
+
+To regenerate the bundled model artifact from the training repo checkpoint:
+
+```bash
+/Users/sakrist/Developer/watch-strike-cnn/.venv/bin/python scripts/export_strike_model.py
 ```
 
 ## Basic Use
