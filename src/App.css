@@ -323,6 +323,114 @@ kbd {
   color: var(--muted);
 }
 
+.rangeListItemButton {
+  width: 100%;
+  border-radius: 0.6rem;
+  padding: 0.42rem 0.55rem;
+  font-size: 0.84rem;
+  font-weight: 500;
+  text-align: left;
+}
+
+.rangeListItemButton:hover {
+  background: #fffdf8;
+}
+
+.rangeListItemButton.isActive {
+  border-color: #ebb39f;
+  background: #fff0ea;
+}
+
+.rangeListCopy {
+  flex: 1 1 auto;
+}
+
+.rangeListAction {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9f2f15;
+}
+
+.metricsPanel {
+  margin-top: 0.75rem;
+  border: 1px solid #e8dece;
+  border-radius: 0.7rem;
+  padding: 0.65rem;
+  background: #fffdf9;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+}
+
+.metricItem {
+  position: relative;
+  border: 1px solid #ece2d3;
+  border-radius: 0.65rem;
+  padding: 0.55rem 0.6rem;
+  background: #fff;
+}
+
+.metricHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.metricItem span {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--muted);
+}
+
+.metricInfoButton {
+  min-width: 1.5rem;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #7f3a19;
+  background: #fff6f1;
+  border-color: #ecc7b5;
+}
+
+.metricInfoPopup {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  right: 0;
+  z-index: 8;
+  border: 1px solid #e7d9c6;
+  border-radius: 0.6rem;
+  padding: 0.55rem 0.6rem;
+  background: #fffdf9;
+  box-shadow: 0 10px 22px rgba(68, 55, 33, 0.14);
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.metricItem strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
 button {
   border: 1px solid var(--line);
   background: #fff;
@@ -522,6 +630,29 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.selectedStrikeOverlayGroup {
+  pointer-events: none;
+}
+
+.selectedStrikeSegment {
+  stroke-width: 1;
+}
+
+.selectedStrikeSegment.preImpact {
+  fill: rgba(14, 165, 164, 0.2);
+  stroke: rgba(13, 148, 136, 0.65);
+}
+
+.selectedStrikeSegment.postImpact {
+  fill: rgba(239, 68, 68, 0.18);
+  stroke: rgba(220, 38, 38, 0.65);
+}
+
+.selectedStrikeImpactLine {
+  stroke: rgba(124, 58, 237, 0.92);
+  stroke-width: 2;
+}
+
 .playheadLine {
   stroke: #dc2626;
   stroke-width: 1.5;
@@ -601,6 +732,10 @@ button:disabled {
 
   .rangeListItem {
     flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rangeListItemButton {
     align-items: flex-start;
   }
 }

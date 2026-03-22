@@ -40,6 +40,11 @@ type SensorChartCardProps = {
   isScrubbing: boolean
   playbackIndex: number
   motionRanges: LabeledRange[]
+  selectedStrikeOverlay: {
+    strikeStartIndex: number
+    impactIndex: number
+    strikeEndIndex: number
+  } | null
   setIsSelecting: (value: boolean) => void
   setSelectionAnchor: (value: number | null) => void
   setSelection: (value: Selection) => void
@@ -67,6 +72,7 @@ export function SensorChartCard({
   isScrubbing,
   playbackIndex,
   motionRanges,
+  selectedStrikeOverlay,
   setIsSelecting,
   setSelectionAnchor,
   setSelection,
@@ -113,6 +119,17 @@ export function SensorChartCard({
   const visibleMotionRanges = collapsed
     ? []
     : motionRanges.filter((range) => range.endIndex >= viewStart && range.startIndex <= viewEnd)
+  const visibleSelectedStrikeOverlay =
+    collapsed ||
+    !selectedStrikeOverlay ||
+    selectedStrikeOverlay.strikeEndIndex < viewStart ||
+    selectedStrikeOverlay.strikeStartIndex > viewEnd
+      ? null
+      : {
+          strikeStartIndex: clamp(selectedStrikeOverlay.strikeStartIndex, viewStart, viewEnd),
+          impactIndex: clamp(selectedStrikeOverlay.impactIndex, viewStart, viewEnd),
+          strikeEndIndex: clamp(selectedStrikeOverlay.strikeEndIndex, viewStart, viewEnd),
+        }
 
   const svgRef = useRef<SVGSVGElement | null>(null)
   const isHoveredRef = useRef(false)
@@ -466,6 +483,40 @@ export function SensorChartCard({
               </g>
             )
           })}
+
+          {visibleSelectedStrikeOverlay && (
+            <g className="selectedStrikeOverlayGroup">
+              <rect
+                x={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.strikeStartIndex)}
+                y={PLOT_TOP}
+                width={Math.max(
+                  sampleWidthPx,
+                  ((visibleSelectedStrikeOverlay.impactIndex - visibleSelectedStrikeOverlay.strikeStartIndex) / xRange) *
+                    plotWidth,
+                )}
+                height={PLOT_HEIGHT}
+                className="selectedStrikeSegment preImpact"
+              />
+              <rect
+                x={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.impactIndex)}
+                y={PLOT_TOP}
+                width={Math.max(
+                  sampleWidthPx,
+                  ((visibleSelectedStrikeOverlay.strikeEndIndex - visibleSelectedStrikeOverlay.impactIndex) / xRange) *
+                    plotWidth,
+                )}
+                height={PLOT_HEIGHT}
+                className="selectedStrikeSegment postImpact"
+              />
+              <line
+                x1={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.impactIndex)}
+                y1={PLOT_TOP}
+                x2={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.impactIndex)}
+                y2={PLOT_TOP + PLOT_HEIGHT}
+                className="selectedStrikeImpactLine"
+              />
+            </g>
+          )}
 
           {keys.map((key, idx) => (
             <path

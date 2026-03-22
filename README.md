@@ -43,6 +43,12 @@ npm run dev
 
 Default local URL: `http://localhost:5173`
 
+## FastAPI Strike Inference
+
+The app uses a local FastAPI service to run the strike model.
+
+Backend setup, model placement, and run instructions live in [`backend/README.md`](backend/README.md).
+
 ## Scripts
 
 ```bash
@@ -54,7 +60,7 @@ npm run lint
 
 ## Strike Model
 
-The app bundles a browser-friendly export of the `watch-strike-cnn` strike detector at [`public/models/strike-cnn-v1.json`](public/models/strike-cnn-v1.json).
+The strike model is served by the FastAPI backend and uses the original PyTorch checkpoint.
 
 - Model input: `70` samples per window
 - Window stride: `8`
@@ -62,12 +68,6 @@ The app bundles a browser-friendly export of the `watch-strike-cnn` strike detec
 - Threshold: configurable in the UI, default `0.50`
 
 The model runs automatically after you load a CSV. Predictions stay separate from manual labels and can be shown or hidden as chart overlays.
-
-To regenerate the bundled model artifact from the training repo checkpoint:
-
-```bash
-/Users/sakrist/Developer/watch-strike-cnn/.venv/bin/python scripts/export_strike_model.py
-```
 
 ## Basic Use
 
