@@ -47,6 +47,30 @@ export function fmt(value: number) {
   return Number.isFinite(value) ? value.toFixed(4) : '-'
 }
 
+export function formatCsvClockTime(timestamp: number) {
+  if (!Number.isFinite(timestamp)) return '-'
+
+  const date = new Date(timestamp * 1000)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  const seconds = String(date.getSeconds()).padStart(2, '0')
+  const milliseconds = String(date.getMilliseconds()).padStart(3, '0')
+
+  return `${hours}:${minutes}:${seconds}.${milliseconds}`
+}
+
+export function formatCsvDateTime(timestamp: number) {
+  if (!Number.isFinite(timestamp)) return '-'
+
+  const date = new Date(timestamp * 1000)
+  const year = String(date.getFullYear())
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const time = formatCsvClockTime(timestamp)
+
+  return `${year}-${month}-${day} ${time}`
+}
+
 export function parseCsv(text: string): Sample[] {
   const lines = text
     .split(/\r?\n/)

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { rangeColors } from '../lib/labels'
 import type { Selection } from '../lib/playback'
-import { COLORS, clamp, sampleVisible, toPath } from '../lib/sensor'
+import { COLORS, clamp, formatCsvClockTime, sampleVisible, toPath } from '../lib/sensor'
 import type { AxisKey, Sample } from '../lib/sensor'
 import type { LabeledRange } from '../lib/labels'
 
@@ -9,7 +9,7 @@ const PLOT_LEFT = 56
 const PLOT_RIGHT = 10
 const PLOT_TOP = 10
 const PLOT_HEIGHT = 182
-const PLOT_BOTTOM = 28
+const PLOT_BOTTOM = 40
 const SVG_HEIGHT = PLOT_TOP + PLOT_HEIGHT + PLOT_BOTTOM
 
 const AXIS_TICK_RATIOS = [0, 0.25, 0.5, 0.75, 1]
@@ -437,11 +437,15 @@ export function SensorChartCard({
             const x = PLOT_LEFT + ratio * plotWidth
             const index = Math.round(viewStart + ratio * xRange)
             const timeValue = points[index]?.t ?? 0
+            const clockValue = formatCsvClockTime(points[index]?.timestamp ?? Number.NaN)
             return (
               <g key={`x-${ratio}`}>
                 <line x1={x} y1={PLOT_TOP + PLOT_HEIGHT} x2={x} y2={PLOT_TOP + PLOT_HEIGHT + 4} className="axisTick" />
-                <text x={x} y={PLOT_TOP + PLOT_HEIGHT + 16} textAnchor="middle" className="axisText">
-                  {timeValue.toFixed(2)}
+                <text x={x} y={PLOT_TOP + PLOT_HEIGHT + 14} textAnchor="middle" className="axisText">
+                  <tspan x={x}>{timeValue.toFixed(2)}s</tspan>
+                  <tspan x={x} dy={12} className="axisTextSecondary">
+                    {clockValue}
+                  </tspan>
                 </text>
               </g>
             )

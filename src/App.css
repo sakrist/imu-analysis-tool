@@ -195,7 +195,6 @@ kbd {
 .inlineFileInput {
   display: inline-flex;
   align-items: center;
-  position: relative;
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 999px;
@@ -206,11 +205,16 @@ kbd {
   color: var(--ink);
 }
 
-.inlineFileInput input {
+.visuallyHiddenInput {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .labelingHint {
@@ -591,6 +595,11 @@ button:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.axisTextSecondary {
+  fill: #9a9388;
+  font-size: 10px;
+}
+
 .axisUnit {
   fill: #544d45;
   font-size: 11px;
@@ -670,6 +679,29 @@ button:disabled {
   gap: 1rem;
   align-items: stretch;
   margin-top: 0.7rem;
+}
+
+.videoSyncSection {
+  margin-top: 0.85rem;
+  border: 1px solid #e8dece;
+  border-radius: 0.75rem;
+  padding: 0.7rem;
+  background: #fffdf9;
+}
+
+.videoPreview {
+  margin-top: 0.7rem;
+  border: 1px solid #e6ddcf;
+  border-radius: 0.65rem;
+  overflow: hidden;
+  background: #120f0b;
+}
+
+.videoPreview video {
+  width: 100%;
+  display: block;
+  max-height: 320px;
+  background: #120f0b;
 }
 
 .motionView {
