@@ -195,7 +195,6 @@ kbd {
 .inlineFileInput {
   display: inline-flex;
   align-items: center;
-  position: relative;
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 999px;
@@ -206,11 +205,16 @@ kbd {
   color: var(--ink);
 }
 
-.inlineFileInput input {
+.visuallyHiddenInput {
   position: absolute;
-  inset: 0;
-  opacity: 0;
-  cursor: pointer;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .labelingHint {
@@ -589,6 +593,11 @@ button:disabled {
   fill: #6d665d;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.axisTextSecondary {
+  fill: #9a9388;
+  font-size: 10px;
 }
 
 .axisUnit {

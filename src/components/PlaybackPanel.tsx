@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { usePlaybackAudio } from '../hooks/usePlaybackAudio'
 import { useThreeTrailScene } from '../hooks/useThreeTrailScene'
 import { getPlaybackStartIndex, type PlaybackWindow, type Selection } from '../lib/playback'
-import { clamp, fmt } from '../lib/sensor'
+import { clamp, fmt, formatCsvClockTime } from '../lib/sensor'
 import type { Sample } from '../lib/sensor'
 
 type PlaybackPanelProps = {
@@ -175,6 +175,9 @@ export function PlaybackPanel({
           <div className="readout">
             <p>
               t: <b>{fmt(currentPoint.t)}s</b>
+            </p>
+            <p>
+              clock: <b>{formatCsvClockTime(currentPoint.timestamp)}</b>
             </p>
             <p>
               gravity: <b>{fmt(currentPoint.grx)}</b>, <b>{fmt(currentPoint.gry)}</b>, <b>{fmt(currentPoint.grz)}</b>

@@ -7,7 +7,7 @@ import { useObjectUrlFile } from './hooks/useObjectUrlFile'
 import { useTimeBasedPlayback } from './hooks/useTimeBasedPlayback'
 import { parseLabeledRangesCsv, serializeLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
 import { type PlaybackSource, normalizeSelection, resolvePlaybackWindow, type Selection } from './lib/playback'
-import { CHART_GROUPS, clamp, computeTrajectory, fmt, parseCsv } from './lib/sensor'
+import { CHART_GROUPS, clamp, computeTrajectory, fmt, formatCsvClockTime, parseCsv } from './lib/sensor'
 import type { Sample } from './lib/sensor'
 import { computeStrikeWindowMetrics } from './lib/strikeMetrics'
 import {
@@ -119,6 +119,18 @@ function App() {
   }, [playbackIndex, playbackWindow, trajectory])
 
   const selectedSampleCount = selectedRangeBounds ? selectedRangeBounds.end - selectedRangeBounds.start + 1 : 0
+  const recordingFrequencyHz = useMemo(() => {
+    if (points.length < 2) return null
+
+    const durationSeconds = points[points.length - 1].timestamp - points[0].timestamp
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null
+
+    return (points.length - 1) / durationSeconds
+  }, [points])
+  const recordingFrequencyLabel =
+    recordingFrequencyHz === null
+      ? '-'
+      : `${recordingFrequencyHz >= 10 ? recordingFrequencyHz.toFixed(1) : recordingFrequencyHz.toFixed(2)} Hz`
   const canAddLabeledRange = Boolean(points.length && selectedRangeBounds && rangeLabelInput.trim())
   const parsedCursorSelectionRadius = Number(cursorSelectionRadiusInput)
   const cursorSelectionRadius = Number.isFinite(parsedCursorSelectionRadius)
@@ -582,13 +594,16 @@ function App() {
 
               <div className="metaRow">
                 <span>
-                  Samples: <b>{points.length.toLocaleString()}</b>
+                  Samples: <b>{points.length.toLocaleString()}</b> · Frequency: <b>{recordingFrequencyLabel}</b>
                 </span>
                 <span>
                   Visible: <b>{(viewEnd - viewStart + 1).toLocaleString()}</b>
                 </span>
                 <span>
                   Range: <b>{fmt(points[viewStart].t)}s</b> to <b>{fmt(points[viewEnd].t)}s</b>
+                </span>
+                <span>
+                  Clock: <b>{formatCsvClockTime(points[viewStart].timestamp)}</b> to <b>{formatCsvClockTime(points[viewEnd].timestamp)}</b>
                 </span>
                 {selection && (
                   <span>
