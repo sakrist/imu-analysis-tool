@@ -7,7 +7,7 @@ import { useObjectUrlFile } from './hooks/useObjectUrlFile'
 import { useTimeBasedPlayback } from './hooks/useTimeBasedPlayback'
 import { parseLabeledRangesCsv, serializeLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
 import { type PlaybackSource, normalizeSelection, resolvePlaybackWindow, type Selection } from './lib/playback'
-import { CHART_GROUPS, clamp, computeTrajectory, fmt, formatCsvClockTime, formatCsvDateTime, parseCsv } from './lib/sensor'
+import { CHART_GROUPS, clamp, computeTrajectory, fmt, formatCsvClockTime, parseCsv } from './lib/sensor'
 import type { Sample } from './lib/sensor'
 import { computeStrikeWindowMetrics } from './lib/strikeMetrics'
 import {
@@ -17,7 +17,6 @@ import {
   type PredictedStrikeRange,
   type StrikeInferenceResult,
 } from './lib/strikeModel'
-import { extractVideoCreationTimestamp } from './lib/videoMetadata'
 import './App.css'
 
 const AUDIO_FILE_ACCEPT =
@@ -53,9 +52,6 @@ function App() {
   const [rangeLabelInput, setRangeLabelInput] = useState('')
   const [cursorSelectionRadiusInput, setCursorSelectionRadiusInput] = useState('50')
   const [sourceFileName, setSourceFileName] = useState('motion')
-  const [videoOffsetInput, setVideoOffsetInput] = useState('0.00')
-  const [videoCreationTimestamp, setVideoCreationTimestamp] = useState<number | null>(null)
-  const [videoMetadataStatus, setVideoMetadataStatus] = useState('')
   const [isStrikeModelCollapsed, setIsStrikeModelCollapsed] = useState(false)
   const [isLabelingCollapsed, setIsLabelingCollapsed] = useState(false)
   const [showHotkeysPopover, setShowHotkeysPopover] = useState(false)
@@ -69,7 +65,6 @@ function App() {
   const [chartContainer, setChartContainer] = useState<HTMLDivElement | null>(null)
   const chartWidth = useChartWidth(chartContainer)
   const { fileRef: audioTrack, clear: clearAudioTrack, setFromFile: setAudioFromFile } = useObjectUrlFile()
-  const { fileRef: videoTrack, clear: clearVideoTrack, setFromFile: setVideoFromFile } = useObjectUrlFile()
 
   const viewSize = Math.max(1, viewEnd - viewStart)
 
@@ -124,6 +119,18 @@ function App() {
   }, [playbackIndex, playbackWindow, trajectory])
 
   const selectedSampleCount = selectedRangeBounds ? selectedRangeBounds.end - selectedRangeBounds.start + 1 : 0
+  const recordingFrequencyHz = useMemo(() => {
+    if (points.length < 2) return null
+
+    const durationSeconds = points[points.length - 1].timestamp - points[0].timestamp
+    if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null
+
+    return (points.length - 1) / durationSeconds
+  }, [points])
+  const recordingFrequencyLabel =
+    recordingFrequencyHz === null
+      ? '-'
+      : `${recordingFrequencyHz >= 10 ? recordingFrequencyHz.toFixed(1) : recordingFrequencyHz.toFixed(2)} Hz`
   const canAddLabeledRange = Boolean(points.length && selectedRangeBounds && rangeLabelInput.trim())
   const parsedCursorSelectionRadius = Number(cursorSelectionRadiusInput)
   const cursorSelectionRadius = Number.isFinite(parsedCursorSelectionRadius)
@@ -453,36 +460,6 @@ function App() {
     [setAudioFromFile],
   )
 
-  const onVideoFileChange = useCallback(
-    async (event: ChangeEvent<HTMLInputElement>) => {
-      const file = event.target.files?.[0]
-      setVideoFromFile(file)
-
-      if (!file) {
-        event.target.value = ''
-        return
-      }
-
-      setVideoCreationTimestamp(null)
-      setVideoMetadataStatus('Reading video metadata…')
-
-      try {
-        const metadataTimestamp = await extractVideoCreationTimestamp(file)
-        if (metadataTimestamp !== null) {
-          setVideoCreationTimestamp(metadataTimestamp)
-          setVideoMetadataStatus(`Metadata creation time: ${formatCsvDateTime(metadataTimestamp)}`)
-        } else {
-          setVideoMetadataStatus('No readable embedded creation timestamp found in this video file.')
-        }
-      } catch {
-        setVideoMetadataStatus('Failed to read embedded video metadata.')
-      }
-
-      event.target.value = ''
-    },
-    [setVideoFromFile],
-  )
-
   return (
     <div className="app">
       <header className="toolbar">
@@ -563,19 +540,6 @@ function App() {
               trajectory={trajectory}
               audioSrc={audioTrack?.url ?? null}
               audioName={audioTrack?.name ?? null}
-              videoSrc={videoTrack?.url ?? null}
-              videoName={videoTrack?.name ?? null}
-              videoOffsetInput={videoOffsetInput}
-              setVideoOffsetInput={setVideoOffsetInput}
-              videoCreationTimestamp={videoCreationTimestamp}
-              videoMetadataStatus={videoMetadataStatus}
-              csvBaseTimestamp={points[0]?.timestamp ?? null}
-              onVideoFileChange={onVideoFileChange}
-              clearVideo={() => {
-                clearVideoTrack()
-                setVideoCreationTimestamp(null)
-                setVideoMetadataStatus('')
-              }}
             />
           </div>
 
@@ -630,7 +594,7 @@ function App() {
 
               <div className="metaRow">
                 <span>
-                  Samples: <b>{points.length.toLocaleString()}</b>
+                  Samples: <b>{points.length.toLocaleString()}</b> · Frequency: <b>{recordingFrequencyLabel}</b>
                 </span>
                 <span>
                   Visible: <b>{(viewEnd - viewStart + 1).toLocaleString()}</b>
