@@ -20,6 +20,16 @@ function smoothMagnitudes(values: number[]) {
   })
 }
 
+type SignalScan = {
+  accMagnitudes: number[]
+  gyroMagnitudes: number[]
+  peakAccMagG: number
+  peakAccLocalIndex: number
+  peakGyroMagRadPerSec: number
+  peakJerkGPerSec: number
+  peakJerkLocalIndex: number
+}
+
 export type StrikeWindowMetrics = {
   strikeStartIndex: number
   impactIndex: number
@@ -30,25 +40,22 @@ export type StrikeWindowMetrics = {
   strikeDurationMs: number
   swingBeginTimeSec: number
   impactTimeSec: number
+  swingDurationToImpactMs: number
   preImpactDurationMs: number
   postImpactDurationMs: number
   preImpactSpeedProxyMps: number
   sampleCount: number
 }
 
-export function computeStrikeWindowMetrics(points: Sample[], startIndex: number, endIndex: number): StrikeWindowMetrics | null {
-  if (!points.length) return null
-
-  const start = Math.max(0, Math.min(points.length - 1, Math.min(startIndex, endIndex)))
-  const end = Math.max(start, Math.min(points.length - 1, Math.max(startIndex, endIndex)))
-  const rangePoints = points.slice(start, end + 1)
-
-  if (!rangePoints.length) return null
+function scanRangeSignals(rangePoints: Sample[]): SignalScan {
+  const accMagnitudes: number[] = []
+  const gyroMagnitudes: number[] = []
 
   let peakAccMagG = 0
+  let peakAccLocalIndex = 0
   let peakGyroMagRadPerSec = 0
   let peakJerkGPerSec = 0
-  let impactIndex = start
+  let peakJerkLocalIndex = -1
 
   let prevSample: Sample | null = null
 
@@ -57,9 +64,12 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
     const accelMagnitudeG = Math.hypot(point.ax, point.ay, point.az)
     const gyroMagnitudeRadPerSec = Math.hypot(point.gx, point.gy, point.gz)
 
+    accMagnitudes.push(accelMagnitudeG)
+    gyroMagnitudes.push(gyroMagnitudeRadPerSec)
+
     if (accelMagnitudeG > peakAccMagG) {
       peakAccMagG = accelMagnitudeG
-      impactIndex = start + index
+      peakAccLocalIndex = index
     }
     peakGyroMagRadPerSec = Math.max(peakGyroMagRadPerSec, gyroMagnitudeRadPerSec)
 
@@ -67,32 +77,57 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
       const dt = point.timestamp - prevSample.timestamp
       if (Number.isFinite(dt) && dt > 0) {
         const jerkGPerSec = Math.hypot(point.ax - prevSample.ax, point.ay - prevSample.ay, point.az - prevSample.az) / dt
-        peakJerkGPerSec = Math.max(peakJerkGPerSec, jerkGPerSec)
+        if (jerkGPerSec > peakJerkGPerSec) {
+          peakJerkGPerSec = jerkGPerSec
+          peakJerkLocalIndex = index
+        }
       }
     }
 
     prevSample = point
   }
 
-  const impactPoint = points[impactIndex]
-  const impactTimeSec = impactPoint?.t ?? rangePoints[0].t
-  const impactLocalIndex = impactIndex - start
+  return {
+    accMagnitudes,
+    gyroMagnitudes,
+    peakAccMagG,
+    peakAccLocalIndex,
+    peakGyroMagRadPerSec,
+    peakJerkGPerSec,
+    peakJerkLocalIndex,
+  }
+}
 
-  const accMagnitudes = rangePoints.map((point) => Math.hypot(point.ax, point.ay, point.az))
-  const gyroMagnitudes = rangePoints.map((point) => Math.hypot(point.gx, point.gy, point.gz))
-  const smoothedAccMagnitudes = smoothMagnitudes(accMagnitudes)
-  const smoothedGyroMagnitudes = smoothMagnitudes(gyroMagnitudes)
+function findImpactLocalIndex(accMagnitudes: number[], peakAccLocalIndex: number, peakJerkLocalIndex: number) {
+  let impactLocalIndex = peakAccLocalIndex
 
+  if (peakJerkLocalIndex > 0) {
+    // Assume impact occurs before the largest acceleration-rate change (peak jerk).
+    const maxImpactLocalIndex = peakJerkLocalIndex - 1
+    let constrainedPeakAcc = Number.NEGATIVE_INFINITY
+
+    for (let index = 0; index <= maxImpactLocalIndex; index += 1) {
+      const accelMagnitudeG = accMagnitudes[index] ?? 0
+      if (accelMagnitudeG > constrainedPeakAcc) {
+        constrainedPeakAcc = accelMagnitudeG
+        impactLocalIndex = index
+      }
+    }
+  }
+
+  return impactLocalIndex
+}
+
+function findSwingBeginLocalIndex(smoothedGyroMagnitudes: number[], impactLocalIndex: number) {
   const preImpactGyro = smoothedGyroMagnitudes.slice(0, impactLocalIndex + 1)
   const baselineCount = Math.max(1, Math.min(preImpactGyro.length, Math.max(3, Math.floor(preImpactGyro.length / 4))))
-  const baselineGyro =
-    average(preImpactGyro.slice(0, baselineCount))
+  const baselineGyro = average(preImpactGyro.slice(0, baselineCount))
   const preImpactPeakGyro = preImpactGyro.reduce((max, value) => Math.max(max, value), 0)
   const gyroRise = Math.max(0, preImpactPeakGyro - baselineGyro)
   const activationThreshold = baselineGyro + Math.max(gyroRise * 0.35, 0.8)
   const releaseThreshold = baselineGyro + Math.max(gyroRise * 0.18, 0.4)
 
-  let swingBeginIndex = start
+  let swingBeginLocalIndex = 0
   let activationIndex = -1
 
   for (let index = impactLocalIndex; index >= 0; index -= 1) {
@@ -107,19 +142,27 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
     while (localStartIndex > 0 && smoothedGyroMagnitudes[localStartIndex - 1] >= releaseThreshold) {
       localStartIndex -= 1
     }
-    swingBeginIndex = start + localStartIndex
+    swingBeginLocalIndex = localStartIndex
   }
 
-  const swingBeginTimeSec = points[swingBeginIndex]?.t ?? rangePoints[0].t
+  return swingBeginLocalIndex
+}
 
-  const flankCount = Math.max(1, Math.min(Math.floor(rangePoints.length / 5), 8))
+function findStrikeLocalBounds(
+  smoothedAccMagnitudes: number[],
+  smoothedGyroMagnitudes: number[],
+  impactLocalIndex: number,
+  peakAccMagG: number,
+) {
+  const rangeLength = smoothedAccMagnitudes.length
+  const flankCount = Math.max(1, Math.min(Math.floor(rangeLength / 5), 8))
   const accBaseline = average([
     ...smoothedAccMagnitudes.slice(0, flankCount),
-    ...smoothedAccMagnitudes.slice(Math.max(flankCount, smoothedAccMagnitudes.length - flankCount)),
+    ...smoothedAccMagnitudes.slice(Math.max(flankCount, rangeLength - flankCount)),
   ])
   const gyroBaseline = average([
     ...smoothedGyroMagnitudes.slice(0, flankCount),
-    ...smoothedGyroMagnitudes.slice(Math.max(flankCount, smoothedGyroMagnitudes.length - flankCount)),
+    ...smoothedGyroMagnitudes.slice(Math.max(flankCount, rangeLength - flankCount)),
   ])
   const peakAccSmoothed = smoothedAccMagnitudes[impactLocalIndex] ?? peakAccMagG
   const peakGyroSmoothed = smoothedGyroMagnitudes.reduce((max, value) => Math.max(max, value), 0)
@@ -141,21 +184,24 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
   }
 
   let strikeEndLocalIndex = impactLocalIndex
-  while (strikeEndLocalIndex < rangePoints.length - 1) {
+  while (strikeEndLocalIndex < rangeLength - 1) {
     const nextIndex = strikeEndLocalIndex + 1
     if (!isStrikeEventActive(nextIndex)) break
     strikeEndLocalIndex = nextIndex
   }
 
-  const strikeStartTimeSec = rangePoints[strikeStartLocalIndex]?.t ?? impactTimeSec
-  const strikeEndTimeSec = rangePoints[strikeEndLocalIndex]?.t ?? impactTimeSec
-  const strikeDurationMs = Math.max(0, (strikeEndTimeSec - strikeStartTimeSec) * 1000)
-  const preImpactDurationMs = Math.max(0, (impactTimeSec - strikeStartTimeSec) * 1000)
-  const postImpactDurationMs = Math.max(0, (strikeEndTimeSec - impactTimeSec) * 1000)
-  const preImpactSpeedStartTimeSec = Math.max(swingBeginTimeSec, impactTimeSec - PRE_IMPACT_WINDOW_SEC)
+  return { strikeStartLocalIndex, strikeEndLocalIndex }
+}
 
+function computePreImpactSpeedProxy(
+  points: Sample[],
+  impactIndex: number,
+  lowerBoundIndex: number,
+  preImpactSpeedStartTimeSec: number,
+) {
   let preImpactSpeedProxyMps = 0
-  for (let index = impactIndex; index > Math.max(swingBeginIndex, start + strikeStartLocalIndex); index -= 1) {
+
+  for (let index = impactIndex; index > lowerBoundIndex; index -= 1) {
     const current = points[index]
     const previous = points[index - 1]
     const dt = current.timestamp - previous.timestamp
@@ -169,16 +215,73 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
     preImpactSpeedProxyMps += accelMagnitudeMps2 * dt
   }
 
-  return {
-    strikeStartIndex: start + strikeStartLocalIndex,
+  return preImpactSpeedProxyMps
+}
+
+export function computeStrikeWindowMetrics(points: Sample[], startIndex: number, endIndex: number): StrikeWindowMetrics | null {
+  if (!points.length) return null
+
+  const start = Math.max(0, Math.min(points.length - 1, Math.min(startIndex, endIndex)))
+  const end = Math.max(start, Math.min(points.length - 1, Math.max(startIndex, endIndex)))
+  const rangePoints = points.slice(start, end + 1)
+
+  if (!rangePoints.length) return null
+
+  const {
+    accMagnitudes,
+    gyroMagnitudes,
+    peakAccMagG,
+    peakAccLocalIndex,
+    peakGyroMagRadPerSec,
+    peakJerkGPerSec,
+    peakJerkLocalIndex,
+  } = scanRangeSignals(rangePoints)
+  const smoothedAccMagnitudes = smoothMagnitudes(accMagnitudes)
+  const smoothedGyroMagnitudes = smoothMagnitudes(gyroMagnitudes)
+
+  const impactLocalIndex = findImpactLocalIndex(accMagnitudes, peakAccLocalIndex, peakJerkLocalIndex)
+  const swingBeginLocalIndex = findSwingBeginLocalIndex(smoothedGyroMagnitudes, impactLocalIndex)
+  const { strikeStartLocalIndex, strikeEndLocalIndex } = findStrikeLocalBounds(
+    smoothedAccMagnitudes,
+    smoothedGyroMagnitudes,
+    impactLocalIndex,
+    peakAccMagG,
+  )
+
+  const swingBeginIndex = start + swingBeginLocalIndex
+  const strikeStartIndex = start + strikeStartLocalIndex
+  const impactIndex = start + impactLocalIndex
+  const strikeEndIndex = start + strikeEndLocalIndex
+
+  const swingBeginTimeSec = points[swingBeginIndex]?.t ?? rangePoints[0].t
+  const impactTimeSec = points[impactIndex]?.t ?? rangePoints[0].t
+  const strikeStartTimeSec = rangePoints[strikeStartLocalIndex]?.t ?? impactTimeSec
+  const strikeEndTimeSec = rangePoints[strikeEndLocalIndex]?.t ?? impactTimeSec
+
+  const strikeDurationMs = Math.max(0, (strikeEndTimeSec - strikeStartTimeSec) * 1000)
+  const swingDurationToImpactMs = Math.max(0, (impactTimeSec - swingBeginTimeSec) * 1000)
+  const preImpactDurationMs = Math.max(0, (impactTimeSec - strikeStartTimeSec) * 1000)
+  const postImpactDurationMs = Math.max(0, (strikeEndTimeSec - impactTimeSec) * 1000)
+
+  const preImpactSpeedStartTimeSec = Math.max(swingBeginTimeSec, impactTimeSec - PRE_IMPACT_WINDOW_SEC)
+  const preImpactSpeedProxyMps = computePreImpactSpeedProxy(
+    points,
     impactIndex,
-    strikeEndIndex: start + strikeEndLocalIndex,
+    Math.max(swingBeginIndex, strikeStartIndex),
+    preImpactSpeedStartTimeSec,
+  )
+
+  return {
+    strikeStartIndex,
+    impactIndex,
+    strikeEndIndex,
     peakAccMagG,
     peakGyroMagRadPerSec,
     peakJerkGPerSec,
     strikeDurationMs,
     swingBeginTimeSec,
     impactTimeSec,
+    swingDurationToImpactMs,
     preImpactDurationMs,
     postImpactDurationMs,
     preImpactSpeedProxyMps,

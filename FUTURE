@@ -1,0 +1,40 @@
+Best Metrics
+
+For a hurler, the most useful metrics are usually the ones that answer: how fast, how clean, how repeatable, and how well-timed.
+
+Swing speed: very useful. Your current peakGyroMagRadPerSec in strikeMetrics.ts (line 27) is already a good start. In the app, I’d present this as Peak Swing Speed, not gyro magnitude.
+Pre-impact speed: also useful. Your current preImpactSpeedProxyMps in strikeMetrics.ts (line 35) is directionally valuable, but I would label it Pre-Impact Speed Index until it is better calibrated.
+Impact sharpness: useful. Your peakJerkGPerSec is a good candidate, but player-facing wording should be Impact Sharpness or Strike Crispness, not jerk.
+Impact force proxy: useful. peakAccMagG can work as a proxy for how violent the impact was, but I would avoid calling it true force.
+Swing timing: very useful for coaching. You already compute strikeDurationMs, preImpactDurationMs, and postImpactDurationMs in strikeMetrics.ts (line 30). These can become Swing Duration, Time Into Impact, and Follow-Through Time.
+Consistency: extremely valuable. Show variance across the last 5 or 10 strikes for speed, timing, and impact sharpness. Players usually improve faster from consistency feedback than from raw peak numbers.
+What I’d Avoid Calling It
+
+Strength: probably not. IMU data from the hurley is better at measuring explosiveness, speed, and impact quality than actual physical strength.
+Energy impact: possible in theory, but not honest yet with the current data alone.
+Force: same issue. You can estimate a proxy, but not true impact force without stronger assumptions.
+Energy / Better Speed
+
+You can estimate more valuable metrics, but you need extra information.
+
+For tip speed, you need the sensor’s position on the hurley and the effective distance from the rotation center to the striking point. Then you can estimate v = omega * r.
+For impact energy, you need at least hurley mass and ideally moment of inertia. Rotational kinetic energy is 0.5 * I * omega^2, so without I it’s mostly guesswork.
+For clean strike / sweet-spot quality, you’d want high-frequency vibration features after impact, and ideally labeled examples of clean vs mishit strikes.
+For ball outcome metrics like exit speed, carry distance, or strike efficiency, you need external ground truth such as video, radar, or tagged session outcomes.
+What Extra Data Would Help Most
+
+Exact sensor placement on the hurley
+Hurley length
+Hurley mass
+Approximate balance point or moment of inertia
+Stable orientation calibration of the IMU relative to the hurley
+Outcome labels: clean strike, mishit, distance, accuracy, ball speed
+Consistent sample rate and good timestamp quality
+If you want a practical first version for the iOS app, I’d ship these 5 first:
+
+Peak Swing Speed
+Pre-Impact Speed Index
+Impact Sharpness
+Swing Duration to Impact
+Consistency Score
+That gives players something understandable and coachable without overclaiming physics. If you want, I can turn this into a proposed metric spec for the iOS app: display name, formula, confidence level, and what extra data each metric needs.

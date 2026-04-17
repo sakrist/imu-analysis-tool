@@ -358,81 +358,104 @@ kbd {
   color: #9f2f15;
 }
 
-.metricsPanel {
+.metricsTableWrap {
   margin-top: 0.75rem;
-  border: 1px solid #e8dece;
-  border-radius: 0.7rem;
-  padding: 0.65rem;
-  background: #fffdf9;
-}
-
-.metricsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.55rem;
-}
-
-.metricItem {
-  position: relative;
   border: 1px solid #ece2d3;
   border-radius: 0.65rem;
-  padding: 0.55rem 0.6rem;
+  overflow: hidden;
   background: #fff;
 }
 
-.metricHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.45rem;
+.metricsTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
 }
 
-.metricItem span {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 600;
-  line-height: 1.3;
-  color: var(--muted);
+.metricsTable th,
+.metricsTable td {
+  border-top: 1px solid #efe6d9;
+  padding: 0.5rem 0.6rem;
+  vertical-align: middle;
 }
 
-.metricInfoButton {
-  min-width: 1.5rem;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 999px;
+.metricsTable thead th {
+  border-top: 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #8c8377;
+  background: #fff9f0;
+  text-align: left;
+}
+
+.metricsTable thead th:last-child {
+  text-align: right;
+}
+
+.metricNameCell {
+  width: 62%;
+}
+
+.metricNameButton {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   padding: 0;
-  font-size: 0.8rem;
+  color: var(--muted);
+  font-size: 0.85rem;
   font-weight: 700;
-  line-height: 1;
-  color: #7f3a19;
-  background: #fff6f1;
-  border-color: #ecc7b5;
+  line-height: 1.35;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
 }
 
-.metricInfoPopup {
-  position: absolute;
-  top: calc(100% + 0.4rem);
-  left: 0;
-  right: 0;
-  z-index: 8;
-  border: 1px solid #e7d9c6;
-  border-radius: 0.6rem;
-  padding: 0.55rem 0.6rem;
+.metricNameText {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.metricNameButton:hover {
+  border: 0;
+  color: #7f3a19;
+}
+
+.metricValueCell {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.metricValueCell strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+
+.metricValueDetail {
+  display: block;
+  margin-top: 0.14rem;
+  color: #8c8377;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.metricInfoRow td {
   background: #fffdf9;
-  box-shadow: 0 10px 22px rgba(68, 55, 33, 0.14);
+  padding-top: 0.2rem;
+}
+
+.metricInfoInline {
+  border: 1px solid #e7d9c6;
+  border-radius: 0.55rem;
+  padding: 0.42rem 0.52rem;
+  background: #fffdf9;
   color: var(--muted);
   font-size: 0.82rem;
   line-height: 1.45;
-  text-transform: none;
-  letter-spacing: 0;
-}
-
-.metricItem strong {
-  display: block;
-  margin-top: 0.25rem;
-  color: var(--ink);
-  font-size: 0.92rem;
 }
 
 button {
@@ -746,5 +769,9 @@ button:disabled {
 
   .rangeListItemButton {
     align-items: flex-start;
+  }
+
+  .metricValueCell {
+    text-align: left;
   }
 }

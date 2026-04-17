@@ -1,13 +1,28 @@
 import { useCallback, useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { AppToolbar } from './components/AppToolbar'
+import { ManualLabelsPanel } from './components/ManualLabelsPanel'
 import { PlaybackPanel } from './components/PlaybackPanel'
 import { SensorChartCard } from './components/SensorChartCard'
+import { StrikeModelPanel } from './components/StrikeModelPanel'
+import { WorkspaceControls } from './components/WorkspaceControls'
 import { useChartWidth } from './hooks/useChartWidth'
 import { useGlobalHotkeys } from './hooks/useGlobalHotkeys'
 import { useObjectUrlFile } from './hooks/useObjectUrlFile'
 import { useTimeBasedPlayback } from './hooks/useTimeBasedPlayback'
 import { parseLabeledRangesCsv, serializeLabeledRangesCsv, sortLabeledRanges, type LabeledRange } from './lib/labels'
 import { type PlaybackSource, normalizeSelection, resolvePlaybackWindow, type Selection } from './lib/playback'
-import { CHART_GROUPS, clamp, computeTrajectory, fmt, formatCsvClockTime, parseCsv } from './lib/sensor'
+import {
+  buildPredictedRangeMetrics,
+  buildSelectedPredictedMetricItems,
+  filterPredictedRanges,
+  getSelectedPeakSwingSpeedComparison,
+  getSelectedPredictedConsistencyScore,
+  MIN_AIR_STRIKE_PEAK_JERK_G_PER_SEC,
+  MIN_PRE_IMPACT_HURLEY_HANDLE_SPEED_MPS,
+  MIN_SWING_DURATION_TO_IMPACT_MS,
+  STRIKE_METRIC_INFO,
+} from './lib/strikeInsights'
+import { CHART_GROUPS, clamp, computeTrajectory, parseCsv } from './lib/sensor'
 import type { Sample } from './lib/sensor'
 import { computeStrikeWindowMetrics } from './lib/strikeMetrics'
 import {
@@ -21,20 +36,6 @@ import './App.css'
 
 const AUDIO_FILE_ACCEPT =
   '.m4a,.wav,.mp3,.caff,.caf,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav,audio/mpeg,audio/x-caf,audio/*'
-
-const STRIKE_METRIC_INFO = {
-  peakAccMag: 'Highest acceleration magnitude inside the selected strike window. This is the strongest instantaneous acceleration seen during the strike.',
-  peakGyroMag: 'Highest gyroscope magnitude inside the selected strike window. This captures the fastest rotational motion during the strike.',
-  peakJerk: 'Largest sample-to-sample change in acceleration divided by time. Higher jerk usually means a sharper, more abrupt impact.',
-  strikeDuration:
-    'Duration of the tighter strike event around impact, recalculated from very high acceleration plus elevated rotation. This is not the full padded ML window.',
-  preImpactDuration:
-    'Time from the recalculated strike start to impact. This is the pre-impact portion of the tighter strike event.',
-  postImpactDuration:
-    'Time from impact to the recalculated strike end. This is the after-impact portion of the tighter strike event.',
-  preImpactSpeedProxy:
-    'A short pre-impact integral of acceleration magnitude over the 150 ms before impact. It is a relative speed proxy, not a true measured velocity.',
-} satisfies Record<string, string>
 
 function App() {
   const [points, setPoints] = useState<Sample[]>([])
@@ -91,12 +92,16 @@ function App() {
     ? clamp(parsedPredictionThreshold, 0, 1)
     : strikeInference?.defaultThreshold ?? 0.5
 
-  const predictedRanges = useMemo(
+  const modelPredictedRanges = useMemo(
     () =>
       strikeInference
         ? buildPredictedStrikeRanges(points, strikeInference.windowPredictions, predictionThreshold, strikeInference.stride)
         : [],
     [points, predictionThreshold, strikeInference],
+  )
+  const { predictedRanges, filteredPredictedRangeCount } = useMemo(
+    () => filterPredictedRanges(points, modelPredictedRanges),
+    [modelPredictedRanges, points],
   )
 
   const positivePredictionCount = useMemo(
@@ -153,58 +158,35 @@ function App() {
         : null,
     [points, selectedPredictedRange],
   )
+  const predictedRangeMetrics = useMemo(() => buildPredictedRangeMetrics(points, predictedRanges), [points, predictedRanges])
   const selectedStrikeOverlay = useMemo(
     () =>
-      selectedPredictedRangeMetrics
+      selectedPredictedRange && selectedPredictedRangeMetrics
         ? {
-            strikeStartIndex: selectedPredictedRangeMetrics.strikeStartIndex,
+            strikeStartIndex: selectedPredictedRange.startIndex,
             impactIndex: selectedPredictedRangeMetrics.impactIndex,
             strikeEndIndex: selectedPredictedRangeMetrics.strikeEndIndex,
           }
         : null,
-    [selectedPredictedRangeMetrics],
+    [selectedPredictedRange, selectedPredictedRangeMetrics],
   )
-  const selectedPredictedMetricItems = useMemo(() => {
-    if (!selectedPredictedRangeMetrics) return []
-
-    return [
-      {
-        id: 'peakAccMag' as const,
-        label: 'Peak Acc Magnitude',
-        value: `${fmt(selectedPredictedRangeMetrics.peakAccMagG)} g`,
-      },
-      {
-        id: 'peakGyroMag' as const,
-        label: 'Peak Gyro Magnitude',
-        value: `${fmt(selectedPredictedRangeMetrics.peakGyroMagRadPerSec)} rad/s`,
-      },
-      {
-        id: 'peakJerk' as const,
-        label: 'Peak Jerk',
-        value: `${fmt(selectedPredictedRangeMetrics.peakJerkGPerSec)} g/s`,
-      },
-      {
-        id: 'strikeDuration' as const,
-        label: 'Strike Duration',
-        value: `${selectedPredictedRangeMetrics.strikeDurationMs.toFixed(1)} ms`,
-      },
-      {
-        id: 'preImpactDuration' as const,
-        label: 'Pre-Impact Duration',
-        value: `${selectedPredictedRangeMetrics.preImpactDurationMs.toFixed(1)} ms`,
-      },
-      {
-        id: 'postImpactDuration' as const,
-        label: 'Post-Impact Duration',
-        value: `${selectedPredictedRangeMetrics.postImpactDurationMs.toFixed(1)} ms`,
-      },
-      {
-        id: 'preImpactSpeedProxy' as const,
-        label: 'Pre-Impact Speed Proxy',
-        value: `${fmt(selectedPredictedRangeMetrics.preImpactSpeedProxyMps)} m/s`,
-      },
-    ]
-  }, [selectedPredictedRangeMetrics])
+  const selectedPredictedConsistencyScore = useMemo(
+    () => getSelectedPredictedConsistencyScore(predictedRangeMetrics, selectedPredictedRange?.id ?? null),
+    [predictedRangeMetrics, selectedPredictedRange],
+  )
+  const selectedPeakSwingSpeedComparison = useMemo(
+    () => getSelectedPeakSwingSpeedComparison(predictedRangeMetrics, selectedPredictedRange?.id ?? null),
+    [predictedRangeMetrics, selectedPredictedRange],
+  )
+  const selectedPredictedMetricItems = useMemo(
+    () =>
+      buildSelectedPredictedMetricItems(
+        selectedPredictedRangeMetrics,
+        selectedPeakSwingSpeedComparison,
+        selectedPredictedConsistencyScore,
+      ),
+    [selectedPeakSwingSpeedComparison, selectedPredictedConsistencyScore, selectedPredictedRangeMetrics],
+  )
 
   const clearSelectionState = useCallback(() => {
     setSelection(null)
@@ -462,58 +444,15 @@ function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
-        <div>
-          <h1>IMU Motion CSV Analyzer + labeler</h1>
-          <p>timestamp + accel + gyro + gravity with zoom, pan, selection, and playback.</p>
-        </div>
-        <div className="toolbarActions">
-          <label className="fileInput">
-            <span>Load CSV</span>
-            <input type="file" accept=".csv,text/csv" onChange={onFileChange} />
-          </label>
-          <label className="fileInput">
-            <span>Load Audio</span>
-            <input type="file" accept={AUDIO_FILE_ACCEPT} onChange={onAudioFileChange} />
-          </label>
-          <button onClick={clearAudioTrack} disabled={!audioTrack}>
-            Clear Audio
-          </button>
-          <div className="hotkeysPopoverWrap">
-            <button
-              className="iconButton"
-              aria-label="Keyboard shortcuts"
-              aria-expanded={showHotkeysPopover}
-              onClick={() => setShowHotkeysPopover((prev) => !prev)}
-            >
-              i
-            </button>
-            {showHotkeysPopover && (
-              <div className="hotkeysPopover" role="dialog" aria-label="Keyboard shortcuts">
-                <h3>Hotkeys</h3>
-                <p>
-                  <kbd>Space</kbd>: Play/Pause
-                </p>
-                <p>
-                  <kbd>Esc</kbd>: Clear selection
-                </p>
-                <p>
-                  <kbd>Esc</kbd> twice: Reset view
-                </p>
-                <p>
-                  <kbd>Cmd</kbd> + <kbd>Enter</kbd>: Zoom to selection
-                </p>
-                <p>
-                  <kbd>Ctrl/Cmd</kbd> + wheel: Zoom graph
-                </p>
-                <p>
-                  <kbd>Alt</kbd> + wheel: Pan graph
-                </p>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+      <AppToolbar
+        audioFileAccept={AUDIO_FILE_ACCEPT}
+        audioLoaded={Boolean(audioTrack)}
+        onAudioFileChange={onAudioFileChange}
+        onClearAudio={clearAudioTrack}
+        onFileChange={onFileChange}
+        onToggleHotkeys={() => setShowHotkeysPopover((prev) => !prev)}
+        showHotkeysPopover={showHotkeysPopover}
+      />
 
       {error && <p className="error">{error}</p>}
 
@@ -544,274 +483,78 @@ function App() {
           </div>
 
           <div className="workspaceRight" ref={setChartContainer}>
-            <section className="controls">
-              <div className="buttonRow">
-                <button onClick={() => zoom(0.75)}>Zoom In</button>
-                <button onClick={() => zoom(1.35)}>Zoom Out</button>
-                <button onClick={resetView}>
-                  Reset View
-                </button>
-                <button
-                  onClick={zoomToSelection}
-                  disabled={!selection}
-                >
-                  Zoom To Selection
-                </button>
-                <button onClick={clearSelectionState} disabled={!selection}>
-                  Clear Selection
-                </button>
-              </div>
-
-              <label className="scrollRow">
-                <span>Scroll window</span>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(0, points.length - 1 - viewSize)}
-                  value={Math.min(viewStart, Math.max(0, points.length - 1 - viewSize))}
-                  onChange={(event) => {
-                    const nextStart = Number(event.target.value)
-                    setViewStart(nextStart)
-                    setViewEnd(nextStart + viewSize)
-                  }}
-                />
-              </label>
-
-              <div className="selectionToolsRow">
-                <span>Select from cursor:</span>
-                <input
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={cursorSelectionRadiusInput}
-                  onChange={(event) => setCursorSelectionRadiusInput(event.target.value)}
-                  aria-label="Samples left and right from cursor"
-                />
-                <button onClick={selectAroundCursor} disabled={!canSelectAroundCursor}>
-                  Select ±X Samples
-                </button>
-              </div>
-
-              <div className="metaRow">
-                <span>
-                  Samples: <b>{points.length.toLocaleString()}</b> · Frequency: <b>{recordingFrequencyLabel}</b>
-                </span>
-                <span>
-                  Visible: <b>{(viewEnd - viewStart + 1).toLocaleString()}</b>
-                </span>
-                <span>
-                  Range: <b>{fmt(points[viewStart].t)}s</b> to <b>{fmt(points[viewEnd].t)}s</b>
-                </span>
-                <span>
-                  Clock: <b>{formatCsvClockTime(points[viewStart].timestamp)}</b> to <b>{formatCsvClockTime(points[viewEnd].timestamp)}</b>
-                </span>
-                {selection && (
-                  <span>
-                    Selected: <b>{(Math.abs(selection.end - selection.start) + 1).toLocaleString()}</b>
-                  </span>
-                )}
-                <span>
-                  Labeled Ranges: <b>{labeledRanges.length}</b>
-                </span>
-                {shouldShowStrikeModel && (
-                  <span>
-                    Predicted Strikes: <b>{predictedRanges.length}</b>
-                  </span>
-                )}
-              </div>
-            </section>
+            <WorkspaceControls
+              canSelectAroundCursor={canSelectAroundCursor}
+              cursorSelectionRadiusInput={cursorSelectionRadiusInput}
+              labeledRangeCount={labeledRanges.length}
+              onClearSelection={clearSelectionState}
+              onCursorSelectionRadiusInputChange={setCursorSelectionRadiusInput}
+              onResetView={resetView}
+              onScrollWindowChange={(nextStart) => {
+                setViewStart(nextStart)
+                setViewEnd(nextStart + viewSize)
+              }}
+              onSelectAroundCursor={selectAroundCursor}
+              onZoomIn={() => zoom(0.75)}
+              onZoomOut={() => zoom(1.35)}
+              onZoomToSelection={zoomToSelection}
+              points={points}
+              predictedRangeCount={predictedRanges.length}
+              recordingFrequencyLabel={recordingFrequencyLabel}
+              selection={selection}
+              shouldShowStrikeModel={shouldShowStrikeModel}
+              viewEnd={viewEnd}
+              viewSize={viewSize}
+              viewStart={viewStart}
+            />
 
             {shouldShowStrikeModel && (
-              <section className="labelingCard">
-                <div className="labelingHeader">
-                  <button
-                    className="collapseToggle"
-                    onClick={() => setIsStrikeModelCollapsed((prev) => !prev)}
-                    aria-expanded={!isStrikeModelCollapsed}
-                    aria-label={`${isStrikeModelCollapsed ? 'Expand' : 'Collapse'} Strike Model`}
-                  >
-                    <span>{isStrikeModelCollapsed ? '▸' : '▾'}</span>
-                    <span>Strike Model</span>
-                  </button>
-                  <span>{modelStatus === 'ready' ? `${predictedRanges.length.toLocaleString()} ranges` : modelStatus}</span>
-                </div>
-                {!isStrikeModelCollapsed && (
-                  <div className="labelingBody">
-                    <div className="modelStatusRow">
-                      <span className={`statusBadge ${modelStatus}`}>
-                        {modelStatus === 'idle' && 'Waiting for data'}
-                        {modelStatus === 'loading' && 'Running inference'}
-                        {modelStatus === 'ready' && 'Model ready'}
-                      </span>
-                      {strikeInference && (
-                        <span className="modelMeta">
-                          {strikeInference.modelVersion} · {strikeInference.windowSize}-sample windows · stride{' '}
-                          {strikeInference.stride}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="labelingRow">
-                      <label className="labeledInput">
-                        <span>Threshold</span>
-                        <input
-                          type="number"
-                          min={0}
-                          max={1}
-                          step={0.05}
-                          value={predictionThresholdInput}
-                          onChange={(event) => setPredictionThresholdInput(event.target.value)}
-                          disabled={modelStatus !== 'ready'}
-                        />
-                      </label>
-                      <label className="checkboxRow">
-                        <input
-                          type="checkbox"
-                          checked={showModelPredictions}
-                          onChange={(event) => setShowModelPredictions(event.target.checked)}
-                        />
-                        <span>Show predicted ranges on charts</span>
-                      </label>
-                    </div>
-
-                    <p className="labelingHint">
-                      {modelError
-                        ? modelError
-                        : strikeInference
-                          ? `Scanned ${strikeInference.windowPredictions.length.toLocaleString()} windows. ${positivePredictionCount.toLocaleString()} windows are above threshold ${predictionThreshold.toFixed(
-                              2,
-                            )}, merged into ${predictedRanges.length.toLocaleString()} predicted strike ranges.`
-                          : 'Load a sensor CSV to run the bundled strike detector.'}
-                    </p>
-
-                    {selectedPredictedRange && selectedPredictedRangeMetrics && (
-                      <div className="metricsPanel">
-                        <div className="labelingHeader">
-                          <span>Selected Predicted Strike</span>
-                          <span>
-                            [{selectedPredictedRange.startIndex}-{selectedPredictedRange.endIndex}] max p=
-                            {selectedPredictedRange.maxProbability.toFixed(2)}
-                          </span>
-                        </div>
-                        <div className="metricsGrid">
-                          {selectedPredictedMetricItems.map((metric) => (
-                            <div key={metric.id} className="metricItem">
-                              <div className="metricHeader">
-                                <span>{metric.label}</span>
-                                <button
-                                  type="button"
-                                  className="metricInfoButton"
-                                  aria-label={`Explain ${metric.label}`}
-                                  aria-expanded={openMetricInfo === metric.id}
-                                  onClick={() =>
-                                    setOpenMetricInfo((current) => (current === metric.id ? null : metric.id))
-                                  }
-                                >
-                                  i
-                                </button>
-                              </div>
-                              <strong>{metric.value}</strong>
-                              {openMetricInfo === metric.id && (
-                                <div className="metricInfoPopup" role="dialog" aria-label={`${metric.label} explanation`}>
-                                  {STRIKE_METRIC_INFO[metric.id]}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {!!predictedRanges.length && !selectedPredictedRange && (
-                      <p className="labelingHint">Select a predicted strike below to make it the active range and inspect metrics.</p>
-                    )}
-
-                    {!!predictedRanges.length && (
-                      <div className="rangeList">
-                        {predictedRanges.map((range) => (
-                          <button
-                            key={range.id}
-                            type="button"
-                            className={`rangeListItem rangeListItemButton${
-                              selectedPredictedRange?.id === range.id ? ' isActive' : ''
-                            }`}
-                            onClick={() => selectPredictedRange(range)}
-                          >
-                            <span className="rangeListCopy">
-                              <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
-                              {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples, max p=
-                              {range.maxProbability.toFixed(2)})
-                            </span>
-                            <span className="rangeListAction">
-                              {selectedPredictedRange?.id === range.id ? 'Selected' : 'Select'}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </section>
+              <StrikeModelPanel
+                filteredPredictedRangeCount={filteredPredictedRangeCount}
+                isCollapsed={isStrikeModelCollapsed}
+                minPeakJerkGPerSec={MIN_AIR_STRIKE_PEAK_JERK_G_PER_SEC}
+                minPreImpactHurleyHandleSpeedMps={MIN_PRE_IMPACT_HURLEY_HANDLE_SPEED_MPS}
+                minSwingDurationToImpactMs={MIN_SWING_DURATION_TO_IMPACT_MS}
+                modelError={modelError}
+                modelPredictedRangesCount={modelPredictedRanges.length}
+                modelStatus={modelStatus}
+                onPredictionThresholdInputChange={setPredictionThresholdInput}
+                onSelectPredictedRange={selectPredictedRange}
+                onToggleCollapsed={() => setIsStrikeModelCollapsed((prev) => !prev)}
+                onToggleMetricInfo={(metricId) =>
+                  setOpenMetricInfo((current) => (current === metricId ? null : metricId))
+                }
+                onToggleShowModelPredictions={setShowModelPredictions}
+                openMetricInfo={openMetricInfo}
+                positivePredictionCount={positivePredictionCount}
+                predictedRanges={predictedRanges}
+                predictionThreshold={predictionThreshold}
+                predictionThresholdInput={predictionThresholdInput}
+                selectedPredictedMetricItems={selectedPredictedMetricItems}
+                selectedPredictedRange={selectedPredictedRange}
+                selectedPredictedRangeMetrics={selectedPredictedRangeMetrics}
+                showModelPredictions={showModelPredictions}
+                strikeInference={strikeInference}
+                strikeMetricInfo={STRIKE_METRIC_INFO}
+              />
             )}
 
-            <section className="labelingCard">
-              <div className="labelingHeader">
-                <button
-                  className="collapseToggle"
-                  onClick={() => setIsLabelingCollapsed((prev) => !prev)}
-                  aria-expanded={!isLabelingCollapsed}
-                  aria-label={`${isLabelingCollapsed ? 'Expand' : 'Collapse'} Manual Labels`}
-                >
-                  <span>{isLabelingCollapsed ? '▸' : '▾'}</span>
-                  <span>Manual Labels</span>
-                </button>
-                <span>{labeledRanges.length.toLocaleString()} saved</span>
-              </div>
-              {!isLabelingCollapsed && (
-                <div className="labelingBody">
-                  <div className="labelingRow">
-                    <input
-                      value={rangeLabelInput}
-                      onChange={(event) => setRangeLabelInput(event.target.value)}
-                      placeholder="Label name (e.g. run, swing, walk)"
-                    />
-                    <button onClick={addLabeledRange} disabled={!canAddLabeledRange}>
-                      Add Selected Range
-                    </button>
-                    <button onClick={() => setLabeledRanges([])} disabled={!labeledRanges.length}>
-                      Clear Labels
-                    </button>
-                    <button onClick={exportLabeledRanges} disabled={!labeledRanges.length}>
-                      Export Labels CSV
-                    </button>
-                    <label className="inlineFileInput">
-                      <span>Load Labels CSV</span>
-                      <input type="file" accept=".csv,text/csv" onChange={onLabelsFileChange} />
-                    </label>
-                  </div>
-                  <p className="labelingHint">
-                    {selectedRangeBounds
-                      ? `Selected ${selectedSampleCount.toLocaleString()} samples (${fmt(
-                          points[selectedRangeBounds.start].t,
-                        )}s to ${fmt(points[selectedRangeBounds.end].t)}s)`
-                      : 'Drag on any chart to select a range, drag the selected area to move it, or resize with edge handles.'}
-                  </p>
-                  {!!labeledRanges.length && (
-                    <div className="rangeList">
-                      {labeledRanges.map((range) => (
-                        <div key={range.id} className="rangeListItem">
-                          <span>
-                            <b>{range.label}</b> [{range.startIndex}-{range.endIndex}] {fmt(range.startTimeSec)}s to{' '}
-                            {fmt(range.endTimeSec)}s ({range.sampleCount.toLocaleString()} samples)
-                          </span>
-                          <button onClick={() => removeLabeledRange(range.id)}>Remove</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </section>
+            <ManualLabelsPanel
+              canAddLabeledRange={canAddLabeledRange}
+              isCollapsed={isLabelingCollapsed}
+              labeledRanges={labeledRanges}
+              onAddSelectedRange={addLabeledRange}
+              onClearLabels={() => setLabeledRanges([])}
+              onExportLabels={exportLabeledRanges}
+              onLabelsFileChange={onLabelsFileChange}
+              onRangeLabelInputChange={setRangeLabelInput}
+              onRemoveLabeledRange={removeLabeledRange}
+              onToggleCollapsed={() => setIsLabelingCollapsed((prev) => !prev)}
+              points={points}
+              rangeLabelInput={rangeLabelInput}
+              selectedRangeBounds={selectedRangeBounds}
+              selectedSampleCount={selectedSampleCount}
+            />
 
             {CHART_GROUPS.map((group) => (
               <SensorChartCard

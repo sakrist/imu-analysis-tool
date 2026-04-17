@@ -39,7 +39,11 @@ Optional runtime overrides:
 From the repo root:
 
 ```bash
-backend/.venv/bin/uvicorn backend.main:app --reload
+cd backend
+
+source .venv/bin/activate
+
+uvicorn main:app --reload
 ```
 
 The service listens on `http://127.0.0.1:8000` by default and exposes:
