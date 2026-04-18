@@ -23,6 +23,7 @@ function smoothMagnitudes(values: number[]) {
 type SignalScan = {
   accMagnitudes: number[]
   gyroMagnitudes: number[]
+  jerkMagnitudes: number[]
   peakAccMagG: number
   peakAccLocalIndex: number
   peakGyroMagRadPerSec: number
@@ -50,6 +51,7 @@ export type StrikeWindowMetrics = {
 function scanRangeSignals(rangePoints: Sample[]): SignalScan {
   const accMagnitudes: number[] = []
   const gyroMagnitudes: number[] = []
+  const jerkMagnitudes: number[] = []
 
   let peakAccMagG = 0
   let peakAccLocalIndex = 0
@@ -66,6 +68,7 @@ function scanRangeSignals(rangePoints: Sample[]): SignalScan {
 
     accMagnitudes.push(accelMagnitudeG)
     gyroMagnitudes.push(gyroMagnitudeRadPerSec)
+    jerkMagnitudes.push(0)
 
     if (accelMagnitudeG > peakAccMagG) {
       peakAccMagG = accelMagnitudeG
@@ -77,6 +80,7 @@ function scanRangeSignals(rangePoints: Sample[]): SignalScan {
       const dt = point.timestamp - prevSample.timestamp
       if (Number.isFinite(dt) && dt > 0) {
         const jerkGPerSec = Math.hypot(point.ax - prevSample.ax, point.ay - prevSample.ay, point.az - prevSample.az) / dt
+        jerkMagnitudes[index] = jerkGPerSec
         if (jerkGPerSec > peakJerkGPerSec) {
           peakJerkGPerSec = jerkGPerSec
           peakJerkLocalIndex = index
@@ -90,6 +94,7 @@ function scanRangeSignals(rangePoints: Sample[]): SignalScan {
   return {
     accMagnitudes,
     gyroMagnitudes,
+    jerkMagnitudes,
     peakAccMagG,
     peakAccLocalIndex,
     peakGyroMagRadPerSec,
@@ -98,19 +103,32 @@ function scanRangeSignals(rangePoints: Sample[]): SignalScan {
   }
 }
 
-function findImpactLocalIndex(accMagnitudes: number[], peakAccLocalIndex: number, peakJerkLocalIndex: number) {
+function findImpactLocalIndex(jerkMagnitudes: number[], peakAccLocalIndex: number, peakJerkLocalIndex: number) {
   let impactLocalIndex = peakAccLocalIndex
 
   if (peakJerkLocalIndex > 0) {
-    // Assume impact occurs before the largest acceleration-rate change (peak jerk).
-    const maxImpactLocalIndex = peakJerkLocalIndex - 1
-    let constrainedPeakAcc = Number.NEGATIVE_INFINITY
+    // Treat impact as the onset of the main acceleration-change burst, not the largest acceleration sample after it.
+    const jerkBeforePeak = jerkMagnitudes.slice(0, peakJerkLocalIndex + 1)
+    const baselineCount = Math.max(1, Math.min(jerkBeforePeak.length, Math.max(3, Math.floor(jerkBeforePeak.length / 4))))
+    const baselineJerk = average(jerkBeforePeak.slice(0, baselineCount))
+    const peakJerk = jerkMagnitudes[peakJerkLocalIndex] ?? 0
+    const jerkRise = Math.max(0, peakJerk - baselineJerk)
 
-    for (let index = 0; index <= maxImpactLocalIndex; index += 1) {
-      const accelMagnitudeG = accMagnitudes[index] ?? 0
-      if (accelMagnitudeG > constrainedPeakAcc) {
-        constrainedPeakAcc = accelMagnitudeG
-        impactLocalIndex = index
+    if (jerkRise > 0) {
+      const activationThreshold = baselineJerk + jerkRise * 0.45
+      const releaseThreshold = baselineJerk + jerkRise * 0.2
+
+      let clusterStartIndex = peakJerkLocalIndex
+      while (clusterStartIndex > 0 && (jerkMagnitudes[clusterStartIndex - 1] ?? 0) >= releaseThreshold) {
+        clusterStartIndex -= 1
+      }
+
+      impactLocalIndex = clusterStartIndex
+      for (let index = clusterStartIndex; index <= peakJerkLocalIndex; index += 1) {
+        if ((jerkMagnitudes[index] ?? 0) >= activationThreshold) {
+          impactLocalIndex = index
+          break
+        }
       }
     }
   }
@@ -230,6 +248,7 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
   const {
     accMagnitudes,
     gyroMagnitudes,
+    jerkMagnitudes,
     peakAccMagG,
     peakAccLocalIndex,
     peakGyroMagRadPerSec,
@@ -238,8 +257,9 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
   } = scanRangeSignals(rangePoints)
   const smoothedAccMagnitudes = smoothMagnitudes(accMagnitudes)
   const smoothedGyroMagnitudes = smoothMagnitudes(gyroMagnitudes)
+  const smoothedJerkMagnitudes = smoothMagnitudes(jerkMagnitudes)
 
-  const impactLocalIndex = findImpactLocalIndex(accMagnitudes, peakAccLocalIndex, peakJerkLocalIndex)
+  const impactLocalIndex = findImpactLocalIndex(smoothedJerkMagnitudes, peakAccLocalIndex, peakJerkLocalIndex)
   const swingBeginLocalIndex = findSwingBeginLocalIndex(smoothedGyroMagnitudes, impactLocalIndex)
   const { strikeStartLocalIndex, strikeEndLocalIndex } = findStrikeLocalBounds(
     smoothedAccMagnitudes,
