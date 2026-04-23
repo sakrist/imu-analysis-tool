@@ -32,6 +32,7 @@ type SignalScan = {
 }
 
 export type StrikeWindowMetrics = {
+  swingBeginIndex: number
   strikeStartIndex: number
   impactIndex: number
   strikeEndIndex: number
@@ -136,34 +137,54 @@ function findImpactLocalIndex(jerkMagnitudes: number[], peakAccLocalIndex: numbe
   return impactLocalIndex
 }
 
-function findSwingBeginLocalIndex(smoothedGyroMagnitudes: number[], impactLocalIndex: number) {
-  const preImpactGyro = smoothedGyroMagnitudes.slice(0, impactLocalIndex + 1)
-  const baselineCount = Math.max(1, Math.min(preImpactGyro.length, Math.max(3, Math.floor(preImpactGyro.length / 4))))
+function findSwingBeginLocalIndex(
+  smoothedAccMagnitudes: number[],
+  smoothedGyroMagnitudes: number[],
+  strikeStartLocalIndex: number,
+  impactLocalIndex: number,
+) {
+  const searchStart = Math.max(0, Math.min(strikeStartLocalIndex, impactLocalIndex))
+  const searchEnd = Math.max(searchStart, impactLocalIndex)
+  if (searchEnd <= searchStart) return searchStart
+
+  const preImpactAcc = smoothedAccMagnitudes.slice(searchStart, searchEnd + 1)
+  const preImpactGyro = smoothedGyroMagnitudes.slice(searchStart, searchEnd + 1)
+  const baselineCount = Math.max(1, Math.min(preImpactAcc.length, Math.max(3, Math.floor(preImpactAcc.length / 3))))
+  const baselineAcc = average(preImpactAcc.slice(0, baselineCount))
   const baselineGyro = average(preImpactGyro.slice(0, baselineCount))
-  const preImpactPeakGyro = preImpactGyro.reduce((max, value) => Math.max(max, value), 0)
-  const gyroRise = Math.max(0, preImpactPeakGyro - baselineGyro)
-  const activationThreshold = baselineGyro + Math.max(gyroRise * 0.35, 0.8)
-  const releaseThreshold = baselineGyro + Math.max(gyroRise * 0.18, 0.4)
+  const peakPreImpactAcc = preImpactAcc.reduce((max, value) => Math.max(max, value), 0)
+  const peakPreImpactGyro = preImpactGyro.reduce((max, value) => Math.max(max, value), 0)
+  const accRise = Math.max(0, peakPreImpactAcc - baselineAcc)
+  const gyroRise = Math.max(0, peakPreImpactGyro - baselineGyro)
 
-  let swingBeginLocalIndex = 0
-  let activationIndex = -1
+  if (accRise <= 1e-6 && gyroRise <= 1e-6) return searchStart
 
-  for (let index = impactLocalIndex; index >= 0; index -= 1) {
-    if (smoothedGyroMagnitudes[index] >= activationThreshold) {
-      activationIndex = index
-      break
+  const accActivationThreshold = baselineAcc + Math.max(accRise * 0.16, 0.08)
+  const gyroActivationThreshold = baselineGyro + Math.max(gyroRise * 0.16, 0.35)
+  const accGrowthThreshold = Math.max(accRise * 0.07, 0.03)
+  const gyroGrowthThreshold = Math.max(gyroRise * 0.07, 0.08)
+
+  // Anchor the start when the pre-impact build-up first becomes sustained,
+  // rather than at the whole-window start or the later jerk burst.
+  for (let index = searchStart + 1; index <= searchEnd; index += 1) {
+    const acc = smoothedAccMagnitudes[index] ?? baselineAcc
+    const prevAcc = smoothedAccMagnitudes[index - 1] ?? acc
+    const gyro = smoothedGyroMagnitudes[index] ?? baselineGyro
+    const prevGyro = smoothedGyroMagnitudes[index - 1] ?? gyro
+    const lookaheadEnd = Math.min(searchEnd, index + 2)
+    const nextAccAverage = average(smoothedAccMagnitudes.slice(index, lookaheadEnd + 1))
+    const nextGyroAverage = average(smoothedGyroMagnitudes.slice(index, lookaheadEnd + 1))
+    const accActive = acc >= accActivationThreshold || nextAccAverage >= accActivationThreshold
+    const gyroActive = gyro >= gyroActivationThreshold || nextGyroAverage >= gyroActivationThreshold
+    const accGrowing = acc - prevAcc >= accGrowthThreshold || nextAccAverage - baselineAcc >= accGrowthThreshold
+    const gyroGrowing = gyro - prevGyro >= gyroGrowthThreshold || nextGyroAverage - baselineGyro >= gyroGrowthThreshold
+
+    if ((accActive || gyroActive) && (accGrowing || gyroGrowing)) {
+      return index
     }
   }
 
-  if (activationIndex >= 0) {
-    let localStartIndex = activationIndex
-    while (localStartIndex > 0 && smoothedGyroMagnitudes[localStartIndex - 1] >= releaseThreshold) {
-      localStartIndex -= 1
-    }
-    swingBeginLocalIndex = localStartIndex
-  }
-
-  return swingBeginLocalIndex
+  return searchStart
 }
 
 function findStrikeLocalBounds(
@@ -260,12 +281,17 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
   const smoothedJerkMagnitudes = smoothMagnitudes(jerkMagnitudes)
 
   const impactLocalIndex = findImpactLocalIndex(smoothedJerkMagnitudes, peakAccLocalIndex, peakJerkLocalIndex)
-  const swingBeginLocalIndex = findSwingBeginLocalIndex(smoothedGyroMagnitudes, impactLocalIndex)
   const { strikeStartLocalIndex, strikeEndLocalIndex } = findStrikeLocalBounds(
     smoothedAccMagnitudes,
     smoothedGyroMagnitudes,
     impactLocalIndex,
     peakAccMagG,
+  )
+  const swingBeginLocalIndex = findSwingBeginLocalIndex(
+    smoothedAccMagnitudes,
+    smoothedGyroMagnitudes,
+    strikeStartLocalIndex,
+    impactLocalIndex,
   )
 
   const swingBeginIndex = start + swingBeginLocalIndex
@@ -292,6 +318,7 @@ export function computeStrikeWindowMetrics(points: Sample[], startIndex: number,
   )
 
   return {
+    swingBeginIndex,
     strikeStartIndex,
     impactIndex,
     strikeEndIndex,

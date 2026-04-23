@@ -4,16 +4,20 @@ import type { LabeledRange } from '../lib/labels'
 
 type ManualLabelsPanelProps = {
   canAddLabeledRange: boolean
+  canSelectAroundCursor: boolean
   isCollapsed: boolean
   labeledRanges: LabeledRange[]
   onAddSelectedRange: () => void
   onClearLabels: () => void
+  onCursorSelectionRadiusInputChange: (value: string) => void
   onExportLabels: () => void
   onLabelsFileChange: ChangeEventHandler<HTMLInputElement>
   onRangeLabelInputChange: (value: string) => void
   onRemoveLabeledRange: (id: string) => void
+  onSelectAroundCursor: () => void
   onToggleCollapsed: () => void
   points: Sample[]
+  cursorSelectionRadiusInput: string
   rangeLabelInput: string
   selectedRangeBounds: { start: number; end: number } | null
   selectedSampleCount: number
@@ -21,14 +25,18 @@ type ManualLabelsPanelProps = {
 
 export function ManualLabelsPanel({
   canAddLabeledRange,
+  canSelectAroundCursor,
+  cursorSelectionRadiusInput,
   isCollapsed,
   labeledRanges,
   onAddSelectedRange,
   onClearLabels,
+  onCursorSelectionRadiusInputChange,
   onExportLabels,
   onLabelsFileChange,
   onRangeLabelInputChange,
   onRemoveLabeledRange,
+  onSelectAroundCursor,
   onToggleCollapsed,
   points,
   rangeLabelInput,
@@ -51,6 +59,20 @@ export function ManualLabelsPanel({
       </div>
       {!isCollapsed && (
         <div className="labelingBody">
+          <div className="selectionToolsRow">
+            <span>Select from cursor:</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={cursorSelectionRadiusInput}
+              onChange={(event) => onCursorSelectionRadiusInputChange(event.target.value)}
+              aria-label="Samples left and right from cursor"
+            />
+            <button onClick={onSelectAroundCursor} disabled={!canSelectAroundCursor}>
+              Select +/-X Samples
+            </button>
+          </div>
           <div className="labelingRow">
             <input
               value={rangeLabelInput}

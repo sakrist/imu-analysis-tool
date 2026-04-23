@@ -41,7 +41,7 @@ type SensorChartCardProps = {
   playbackIndex: number
   motionRanges: LabeledRange[]
   selectedStrikeOverlay: {
-    strikeStartIndex: number
+    swingBeginIndex: number
     impactIndex: number
     strikeEndIndex: number
   } | null
@@ -123,10 +123,10 @@ export function SensorChartCard({
     collapsed ||
     !selectedStrikeOverlay ||
     selectedStrikeOverlay.strikeEndIndex < viewStart ||
-    selectedStrikeOverlay.strikeStartIndex > viewEnd
+    selectedStrikeOverlay.swingBeginIndex > viewEnd
       ? null
       : {
-          strikeStartIndex: clamp(selectedStrikeOverlay.strikeStartIndex, viewStart, viewEnd),
+          swingBeginIndex: clamp(selectedStrikeOverlay.swingBeginIndex, viewStart, viewEnd),
           impactIndex: clamp(selectedStrikeOverlay.impactIndex, viewStart, viewEnd),
           strikeEndIndex: clamp(selectedStrikeOverlay.strikeEndIndex, viewStart, viewEnd),
         }
@@ -491,11 +491,11 @@ export function SensorChartCard({
           {visibleSelectedStrikeOverlay && (
             <g className="selectedStrikeOverlayGroup">
               <rect
-                x={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.strikeStartIndex)}
+                x={PLOT_LEFT + indexToPlotX(visibleSelectedStrikeOverlay.swingBeginIndex)}
                 y={PLOT_TOP}
                 width={Math.max(
                   sampleWidthPx,
-                  ((visibleSelectedStrikeOverlay.impactIndex - visibleSelectedStrikeOverlay.strikeStartIndex) / xRange) *
+                  ((visibleSelectedStrikeOverlay.impactIndex - visibleSelectedStrikeOverlay.swingBeginIndex) / xRange) *
                     plotWidth,
                 )}
                 height={PLOT_HEIGHT}

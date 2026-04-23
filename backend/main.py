@@ -20,7 +20,7 @@ DEFAULT_FEATURE_STD = DEFAULT_MODEL_ROOT / "feature_std_11ch.npy"
 DEFAULT_FEATURE_COLS = ["ax", "ay", "az", "gx", "gy", "gz", "grx", "gry", "grz", "acc_mag", "gyro_mag"]
 DEFAULT_STRIDE = int(os.getenv("STRIKE_MODEL_STRIDE", "8"))
 DEFAULT_THRESHOLD = float(os.getenv("STRIKE_MODEL_THRESHOLD", "0.5"))
-DEFAULT_LABEL_END_PADDING = int(os.getenv("STRIKE_MODEL_LABEL_END_PADDING", "20"))
+DEFAULT_LABEL_END_PADDING = int(os.getenv("STRIKE_MODEL_LABEL_END_PADDING", "0"))
 BATCH_SIZE = 256
 
 

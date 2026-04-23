@@ -163,7 +163,7 @@ function App() {
     () =>
       selectedPredictedRange && selectedPredictedRangeMetrics
         ? {
-            strikeStartIndex: selectedPredictedRange.startIndex,
+            swingBeginIndex: selectedPredictedRangeMetrics.swingBeginIndex,
             impactIndex: selectedPredictedRangeMetrics.impactIndex,
             strikeEndIndex: selectedPredictedRangeMetrics.strikeEndIndex,
           }
@@ -484,17 +484,13 @@ function App() {
 
           <div className="workspaceRight" ref={setChartContainer}>
             <WorkspaceControls
-              canSelectAroundCursor={canSelectAroundCursor}
-              cursorSelectionRadiusInput={cursorSelectionRadiusInput}
               labeledRangeCount={labeledRanges.length}
               onClearSelection={clearSelectionState}
-              onCursorSelectionRadiusInputChange={setCursorSelectionRadiusInput}
               onResetView={resetView}
               onScrollWindowChange={(nextStart) => {
                 setViewStart(nextStart)
                 setViewEnd(nextStart + viewSize)
               }}
-              onSelectAroundCursor={selectAroundCursor}
               onZoomIn={() => zoom(0.75)}
               onZoomOut={() => zoom(1.35)}
               onZoomToSelection={zoomToSelection}
@@ -541,14 +537,18 @@ function App() {
 
             <ManualLabelsPanel
               canAddLabeledRange={canAddLabeledRange}
+              canSelectAroundCursor={canSelectAroundCursor}
+              cursorSelectionRadiusInput={cursorSelectionRadiusInput}
               isCollapsed={isLabelingCollapsed}
               labeledRanges={labeledRanges}
               onAddSelectedRange={addLabeledRange}
               onClearLabels={() => setLabeledRanges([])}
+              onCursorSelectionRadiusInputChange={setCursorSelectionRadiusInput}
               onExportLabels={exportLabeledRanges}
               onLabelsFileChange={onLabelsFileChange}
               onRangeLabelInputChange={setRangeLabelInput}
               onRemoveLabeledRange={removeLabeledRange}
+              onSelectAroundCursor={selectAroundCursor}
               onToggleCollapsed={() => setIsLabelingCollapsed((prev) => !prev)}
               points={points}
               rangeLabelInput={rangeLabelInput}

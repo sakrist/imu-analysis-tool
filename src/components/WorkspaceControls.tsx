@@ -2,13 +2,10 @@ import { fmt, formatCsvClockTime, type Sample } from '../lib/sensor'
 import type { Selection } from '../lib/playback'
 
 type WorkspaceControlsProps = {
-  canSelectAroundCursor: boolean
   labeledRangeCount: number
   onClearSelection: () => void
-  onCursorSelectionRadiusInputChange: (value: string) => void
   onResetView: () => void
   onScrollWindowChange: (nextStart: number) => void
-  onSelectAroundCursor: () => void
   onZoomIn: () => void
   onZoomOut: () => void
   onZoomToSelection: () => void
@@ -20,18 +17,13 @@ type WorkspaceControlsProps = {
   viewEnd: number
   viewSize: number
   viewStart: number
-  cursorSelectionRadiusInput: string
 }
 
 export function WorkspaceControls({
-  canSelectAroundCursor,
-  cursorSelectionRadiusInput,
   labeledRangeCount,
   onClearSelection,
-  onCursorSelectionRadiusInputChange,
   onResetView,
   onScrollWindowChange,
-  onSelectAroundCursor,
   onZoomIn,
   onZoomOut,
   onZoomToSelection,
@@ -68,21 +60,6 @@ export function WorkspaceControls({
           onChange={(event) => onScrollWindowChange(Number(event.target.value))}
         />
       </label>
-
-      <div className="selectionToolsRow">
-        <span>Select from cursor:</span>
-        <input
-          type="number"
-          min={0}
-          step={1}
-          value={cursorSelectionRadiusInput}
-          onChange={(event) => onCursorSelectionRadiusInputChange(event.target.value)}
-          aria-label="Samples left and right from cursor"
-        />
-        <button onClick={onSelectAroundCursor} disabled={!canSelectAroundCursor}>
-          Select +/-X Samples
-        </button>
-      </div>
 
       <div className="metaRow">
         <span>
