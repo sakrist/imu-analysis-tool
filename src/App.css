@@ -349,6 +349,41 @@ kbd {
   flex: 1 1 auto;
 }
 
+.rangeListActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.rangeActionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 999px;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1;
+}
+
+.rangeActionIcon {
+  width: 0.86rem;
+  height: 0.86rem;
+  display: block;
+}
+
+.rangeAnalyzeButton.isActive {
+  border-color: #ebb39f;
+  background: #fff0ea;
+}
+
+.rangeRemoveButton {
+  width: 2rem;
+  justify-content: center;
+  padding: 0.32rem 0;
+  color: #9f2f15;
+}
+
 .rangeListAction {
   flex: 0 0 auto;
   font-size: 0.78rem;
@@ -765,6 +800,10 @@ button:disabled {
   .rangeListItem {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .rangeListActions {
+    align-self: flex-end;
   }
 
   .rangeListItemButton {

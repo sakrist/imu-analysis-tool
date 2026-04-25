@@ -12,6 +12,7 @@ type StrikeModelPanelProps = {
   minSwingDurationToImpactMs: number
   modelError: string
   modelPredictedRangesCount: number
+  onToggleFilterPredictedRanges: (checked: boolean) => void
   modelStatus: 'idle' | 'loading' | 'ready' | 'error'
   onPredictionThresholdInputChange: (value: string) => void
   onSelectPredictedRange: (range: PredictedStrikeRange) => void
@@ -26,6 +27,7 @@ type StrikeModelPanelProps = {
   selectedPredictedMetricItems: SelectedPredictedMetricItem[]
   selectedPredictedRange: PredictedStrikeRange | null
   selectedPredictedRangeMetrics: StrikeWindowMetrics | null
+  shouldFilterPredictedRanges: boolean
   showModelPredictions: boolean
   strikeInference: StrikeInferenceResult | null
   strikeMetricInfo: Record<StrikeMetricInfoKey, string>
@@ -39,6 +41,7 @@ export function StrikeModelPanel({
   minSwingDurationToImpactMs,
   modelError,
   modelPredictedRangesCount,
+  onToggleFilterPredictedRanges,
   modelStatus,
   onPredictionThresholdInputChange,
   onSelectPredictedRange,
@@ -53,6 +56,7 @@ export function StrikeModelPanel({
   selectedPredictedMetricItems,
   selectedPredictedRange,
   selectedPredictedRangeMetrics,
+  shouldFilterPredictedRanges,
   showModelPredictions,
   strikeInference,
   strikeMetricInfo,
@@ -107,6 +111,15 @@ export function StrikeModelPanel({
               />
               <span>Show predicted ranges on charts</span>
             </label>
+            <label className="checkboxRow">
+              <input
+                type="checkbox"
+                checked={shouldFilterPredictedRanges}
+                onChange={(event) => onToggleFilterPredictedRanges(event.target.checked)}
+                disabled={modelStatus !== 'ready'}
+              />
+              <span>Filter out weak predicted ranges</span>
+            </label>
           </div>
 
           <p className="labelingHint">
@@ -115,8 +128,16 @@ export function StrikeModelPanel({
               : strikeInference
                 ? `Scanned ${strikeInference.windowPredictions.length.toLocaleString()} windows. ${positivePredictionCount.toLocaleString()} windows are above threshold ${predictionThreshold.toFixed(
                     2,
-                  )}, merged into ${modelPredictedRangesCount.toLocaleString()} model ranges. ${predictedRanges.length.toLocaleString()} ranges pass peak jerk >= ${minPeakJerkGPerSec.toLocaleString()} g/s, swing duration to impact >= ${minSwingDurationToImpactMs.toLocaleString()} ms, and pre-impact hurley handle speed >= ${minPreImpactHurleyHandleSpeedMps.toLocaleString()} m/s${
-                    filteredPredictedRangeCount > 0 ? ` (${filteredPredictedRangeCount.toLocaleString()} filtered out).` : '.'
+                  )}, merged into ${modelPredictedRangesCount.toLocaleString()} model ranges. ${
+                    shouldFilterPredictedRanges
+                      ? `${predictedRanges.length.toLocaleString()} ranges pass peak jerk >= ${minPeakJerkGPerSec.toLocaleString()} g/s, swing duration to impact >= ${minSwingDurationToImpactMs.toLocaleString()} ms, and pre-impact hurley handle speed >= ${minPreImpactHurleyHandleSpeedMps.toLocaleString()} m/s${
+                          filteredPredictedRangeCount > 0 ? ` (${filteredPredictedRangeCount.toLocaleString()} filtered out).` : '.'
+                        }`
+                      : `Filtering is off, so all ${predictedRanges.length.toLocaleString()} model ranges are shown${
+                          filteredPredictedRangeCount > 0
+                            ? ` (${filteredPredictedRangeCount.toLocaleString()} would be filtered out).`
+                            : '.'
+                        }`
                   }`
                 : 'Load a sensor CSV to run the bundled strike detector.'}
           </p>

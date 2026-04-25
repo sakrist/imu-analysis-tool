@@ -37,6 +37,12 @@ export type SelectedPredictedMetricItem = {
   detail: string | null
 }
 
+type MetricRange = {
+  id: string
+  startIndex: number
+  endIndex: number
+}
+
 function median(values: number[]) {
   if (!values.length) return 0
 
@@ -68,7 +74,7 @@ export function filterPredictedRanges(points: Sample[], modelPredictedRanges: Pr
   }
 }
 
-export function buildPredictedRangeMetrics(points: Sample[], predictedRanges: PredictedStrikeRange[]) {
+export function buildPredictedRangeMetrics<T extends MetricRange>(points: Sample[], predictedRanges: T[]) {
   return predictedRanges
     .map((range) => {
       const metrics = computeStrikeWindowMetrics(points, range.startIndex, range.endIndex)
@@ -133,6 +139,7 @@ export function buildSelectedPredictedMetricItems(
   selectedPredictedRangeMetrics: StrikeWindowMetrics | null,
   selectedPeakSwingSpeedComparison: string | null,
   selectedPredictedConsistencyScore: number | null,
+  consistencyMissingDetail = 'Need at least 2 ranges for comparison',
 ): SelectedPredictedMetricItem[] {
   if (!selectedPredictedRangeMetrics) return []
 
@@ -170,7 +177,7 @@ export function buildSelectedPredictedMetricItems(
       label: 'Consistency Score',
       value: selectedPredictedConsistencyScore === null ? '-' : selectedPredictedConsistencyScore.toFixed(0),
       unit: selectedPredictedConsistencyScore === null ? '' : '%',
-      detail: selectedPredictedConsistencyScore === null ? 'Need at least 2 predicted strikes' : null,
+      detail: selectedPredictedConsistencyScore === null ? consistencyMissingDetail : null,
     },
   ]
 }

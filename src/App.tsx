@@ -50,6 +50,7 @@ function App() {
   const [playing, setPlaying] = useState(false)
   const [playbackSource, setPlaybackSource] = useState<PlaybackSource>('view')
   const [labeledRanges, setLabeledRanges] = useState<LabeledRange[]>([])
+  const [selectedLabeledRangeId, setSelectedLabeledRangeId] = useState<string | null>(null)
   const [rangeLabelInput, setRangeLabelInput] = useState('')
   const [cursorSelectionRadiusInput, setCursorSelectionRadiusInput] = useState('50')
   const [sourceFileName, setSourceFileName] = useState('motion')
@@ -62,6 +63,7 @@ function App() {
   const [modelError, setModelError] = useState('')
   const [predictionThresholdInput, setPredictionThresholdInput] = useState('0.50')
   const [showModelPredictions, setShowModelPredictions] = useState(true)
+  const [shouldFilterPredictedRanges, setShouldFilterPredictedRanges] = useState(true)
   const [openMetricInfo, setOpenMetricInfo] = useState<keyof typeof STRIKE_METRIC_INFO | null>(null)
   const [chartContainer, setChartContainer] = useState<HTMLDivElement | null>(null)
   const chartWidth = useChartWidth(chartContainer)
@@ -99,9 +101,16 @@ function App() {
         : [],
     [points, predictionThreshold, strikeInference],
   )
-  const { predictedRanges, filteredPredictedRangeCount } = useMemo(
+  const filteredPredictionResult = useMemo(
     () => filterPredictedRanges(points, modelPredictedRanges),
     [modelPredictedRanges, points],
+  )
+  const { predictedRanges, filteredPredictedRangeCount } = useMemo(
+    () => ({
+      predictedRanges: shouldFilterPredictedRanges ? filteredPredictionResult.predictedRanges : modelPredictedRanges,
+      filteredPredictedRangeCount: filteredPredictionResult.filteredPredictedRangeCount,
+    }),
+    [filteredPredictionResult, modelPredictedRanges, shouldFilterPredictedRanges],
   )
 
   const positivePredictionCount = useMemo(
@@ -143,6 +152,10 @@ function App() {
     : null
   const canSelectAroundCursor = points.length > 0 && cursorSelectionRadius !== null
   const shouldShowStrikeModel = isStrikeModelAvailable && modelStatus !== 'error'
+  const selectedLabeledRange = useMemo(
+    () => labeledRanges.find((range) => range.id === selectedLabeledRangeId) ?? null,
+    [labeledRanges, selectedLabeledRangeId],
+  )
   const selectedPredictedRange = useMemo(() => {
     if (!selectedRangeBounds) return null
     return (
@@ -158,17 +171,26 @@ function App() {
         : null,
     [points, selectedPredictedRange],
   )
+  const selectedLabeledRangeMetrics = useMemo(
+    () =>
+      selectedLabeledRange
+        ? computeStrikeWindowMetrics(points, selectedLabeledRange.startIndex, selectedLabeledRange.endIndex)
+        : null,
+    [points, selectedLabeledRange],
+  )
   const predictedRangeMetrics = useMemo(() => buildPredictedRangeMetrics(points, predictedRanges), [points, predictedRanges])
+  const labeledRangeMetrics = useMemo(() => buildPredictedRangeMetrics(points, labeledRanges), [labeledRanges, points])
+  const activeStrikeMetrics = selectedPredictedRangeMetrics ?? selectedLabeledRangeMetrics
   const selectedStrikeOverlay = useMemo(
     () =>
-      selectedPredictedRange && selectedPredictedRangeMetrics
+      activeStrikeMetrics
         ? {
-            swingBeginIndex: selectedPredictedRangeMetrics.swingBeginIndex,
-            impactIndex: selectedPredictedRangeMetrics.impactIndex,
-            strikeEndIndex: selectedPredictedRangeMetrics.strikeEndIndex,
+            swingBeginIndex: activeStrikeMetrics.swingBeginIndex,
+            impactIndex: activeStrikeMetrics.impactIndex,
+            strikeEndIndex: activeStrikeMetrics.strikeEndIndex,
           }
         : null,
-    [selectedPredictedRange, selectedPredictedRangeMetrics],
+    [activeStrikeMetrics],
   )
   const selectedPredictedConsistencyScore = useMemo(
     () => getSelectedPredictedConsistencyScore(predictedRangeMetrics, selectedPredictedRange?.id ?? null),
@@ -184,8 +206,27 @@ function App() {
         selectedPredictedRangeMetrics,
         selectedPeakSwingSpeedComparison,
         selectedPredictedConsistencyScore,
+        'Need at least 2 predicted strikes',
       ),
     [selectedPeakSwingSpeedComparison, selectedPredictedConsistencyScore, selectedPredictedRangeMetrics],
+  )
+  const selectedLabeledConsistencyScore = useMemo(
+    () => getSelectedPredictedConsistencyScore(labeledRangeMetrics, selectedLabeledRange?.id ?? null),
+    [labeledRangeMetrics, selectedLabeledRange],
+  )
+  const selectedLabeledPeakSwingSpeedComparison = useMemo(
+    () => getSelectedPeakSwingSpeedComparison(labeledRangeMetrics, selectedLabeledRange?.id ?? null),
+    [labeledRangeMetrics, selectedLabeledRange],
+  )
+  const selectedLabeledMetricItems = useMemo(
+    () =>
+      buildSelectedPredictedMetricItems(
+        selectedLabeledRangeMetrics,
+        selectedLabeledPeakSwingSpeedComparison,
+        selectedLabeledConsistencyScore,
+        'Need at least 2 labeled sections',
+      ),
+    [selectedLabeledConsistencyScore, selectedLabeledPeakSwingSpeedComparison, selectedLabeledRangeMetrics],
   )
 
   const clearSelectionState = useCallback(() => {
@@ -278,6 +319,12 @@ function App() {
     }
   }, [isStrikeModelAvailable, points])
 
+  useEffect(() => {
+    if (!selectedLabeledRangeId) return
+    if (labeledRanges.some((range) => range.id === selectedLabeledRangeId)) return
+    setSelectedLabeledRangeId(null)
+  }, [labeledRanges, selectedLabeledRangeId])
+
   const zoom = useCallback(
     (factor: number, anchorRatio = 0.5) => {
       if (!points.length) return
@@ -342,9 +389,29 @@ function App() {
     setIsSelecting(false)
   }, [cursorSelectionRadius, playbackIndex, points.length])
 
+  const clearLabeledRanges = useCallback(() => {
+    setLabeledRanges([])
+    setSelectedLabeledRangeId(null)
+  }, [])
+
   const removeLabeledRange = useCallback((id: string) => {
     setLabeledRanges((prev) => prev.filter((range) => range.id !== id))
+    setSelectedLabeledRangeId((current) => (current === id ? null : current))
   }, [])
+
+  const analyzeLabeledRange = useCallback(
+    (range: LabeledRange) => {
+      setSelectedLabeledRangeId(range.id)
+      setPlaying(false)
+      setPlaybackSource('selection')
+      setPlaybackIndex(range.startIndex)
+      setSelection({ start: range.startIndex, end: range.endIndex })
+      setSelectionAnchor(null)
+      setIsSelecting(false)
+      setIsScrubbing(false)
+    },
+    [setPlaybackIndex],
+  )
 
   const selectPredictedRange = useCallback(
     (range: PredictedStrikeRange) => {
@@ -406,6 +473,7 @@ function App() {
         setError('No numeric rows found in CSV.')
         setPoints([])
         setLabeledRanges([])
+        setSelectedLabeledRangeId(null)
         setStrikeInference(null)
         setModelStatus('idle')
         setModelError('')
@@ -420,6 +488,7 @@ function App() {
       setPlaying(false)
       setPlaybackSource('view')
       setLabeledRanges([])
+      setSelectedLabeledRangeId(null)
       setStrikeInference(null)
       setModelStatus(isStrikeModelAvailable ? 'loading' : 'idle')
       setModelError('')
@@ -428,6 +497,7 @@ function App() {
       setError(err instanceof Error ? err.message : 'Failed to parse CSV')
       setPoints([])
       setLabeledRanges([])
+      setSelectedLabeledRangeId(null)
       setStrikeInference(null)
       setModelStatus('idle')
       setModelError('')
@@ -514,6 +584,7 @@ function App() {
                 modelError={modelError}
                 modelPredictedRangesCount={modelPredictedRanges.length}
                 modelStatus={modelStatus}
+                onToggleFilterPredictedRanges={setShouldFilterPredictedRanges}
                 onPredictionThresholdInputChange={setPredictionThresholdInput}
                 onSelectPredictedRange={selectPredictedRange}
                 onToggleCollapsed={() => setIsStrikeModelCollapsed((prev) => !prev)}
@@ -529,6 +600,7 @@ function App() {
                 selectedPredictedMetricItems={selectedPredictedMetricItems}
                 selectedPredictedRange={selectedPredictedRange}
                 selectedPredictedRangeMetrics={selectedPredictedRangeMetrics}
+                shouldFilterPredictedRanges={shouldFilterPredictedRanges}
                 showModelPredictions={showModelPredictions}
                 strikeInference={strikeInference}
                 strikeMetricInfo={STRIKE_METRIC_INFO}
@@ -542,18 +614,27 @@ function App() {
               isCollapsed={isLabelingCollapsed}
               labeledRanges={labeledRanges}
               onAddSelectedRange={addLabeledRange}
-              onClearLabels={() => setLabeledRanges([])}
+              onAnalyzeLabeledRange={analyzeLabeledRange}
+              onClearLabels={clearLabeledRanges}
               onCursorSelectionRadiusInputChange={setCursorSelectionRadiusInput}
               onExportLabels={exportLabeledRanges}
               onLabelsFileChange={onLabelsFileChange}
               onRangeLabelInputChange={setRangeLabelInput}
               onRemoveLabeledRange={removeLabeledRange}
               onSelectAroundCursor={selectAroundCursor}
+              onToggleMetricInfo={(metricId) =>
+                setOpenMetricInfo((current) => (current === metricId ? null : metricId))
+              }
               onToggleCollapsed={() => setIsLabelingCollapsed((prev) => !prev)}
+              openMetricInfo={openMetricInfo}
               points={points}
               rangeLabelInput={rangeLabelInput}
+              selectedLabeledMetricItems={selectedLabeledMetricItems}
+              selectedLabeledRange={selectedLabeledRange}
+              selectedLabeledRangeMetrics={selectedLabeledRangeMetrics}
               selectedRangeBounds={selectedRangeBounds}
               selectedSampleCount={selectedSampleCount}
+              strikeMetricInfo={STRIKE_METRIC_INFO}
             />
 
             {CHART_GROUPS.map((group) => (
